@@ -1,7 +1,8 @@
 //! The world map: the Buffer Archipelago at sea, every isle on a route
-//! from the Meadow to the Archive. Pip's ferry sails it with h and l (isle
-//! by isle) and j and k (chapter by chapter); isles past the next one to
-//! clear lie in fog.
+//! from the Meadow to the Archive and beyond, its chapters grouped in
+//! regions by topic. Pip's ferry sails it with h and l (isle by isle), j and
+//! k (chapter by chapter) and J and K (region by region); isles past the
+//! next one to clear lie in fog.
 
 use super::*;
 
@@ -9,6 +10,8 @@ use super::*;
 const MAP_H: f32 = 600.0;
 const CHAPTER_GAP: f32 = 330.0;
 const ISLE_GAP: f32 = 84.0;
+/// Open sea between two regions.
+const REGION_GAP: f32 = 220.0;
 
 /// Isle `i`'s chapter (its place in the campaign), its place in the
 /// chapter, and how many isles the chapter has.
@@ -22,7 +25,8 @@ fn place(i: usize) -> (usize, usize, usize) {
 /// Where isle `i` lies on the map.
 pub(crate) fn isle_pos(i: usize) -> (f32, f32) {
     let (c, k, n) = place(i);
-    let cx = 240.0 + c as f32 * CHAPTER_GAP;
+    let region = story::region_of(LEVELS[i].chapter);
+    let cx = 240.0 + c as f32 * CHAPTER_GAP + region as f32 * REGION_GAP;
     let cy = if c % 2 == 0 { 250.0 } else { 350.0 };
     let spread = k as f32 - (n as f32 - 1.0) / 2.0;
     (cx + spread * ISLE_GAP, cy + if k % 2 == 0 { -40.0 } else { 40.0 })
@@ -74,6 +78,29 @@ fn draw_map(best: &[Option<usize>], selected: usize) -> Painter {
             painter = painter.begin_path().move_to(x, y).quadratic_curve_to(point(px(x + 9.0), px(y - 5.0)), point(px(x + 18.0), px(y))).stroke();
             x += 70.0 + noise(Pos { row, col: x as usize }) * 60.0;
         }
+    }
+    // Each region's waters, tinted, with its name and topic above.
+    for (r, region) in story::REGIONS.iter().enumerate() {
+        let isles: Vec<usize> = (0..LEVELS.len()).filter(|&i| story::region_of(LEVELS[i].chapter) == r).collect();
+        let (Some(&first), Some(&last)) = (isles.first(), isles.last()) else { continue };
+        let (x0, x1) = (isle_pos(first).0 - 110.0, isle_pos(last).0 + 110.0);
+        let foggy = first >= fog_from;
+        painter = painter
+            .fill_color(hexa(region.tint, if foggy { 0.05 } else { 0.11 }))
+            .begin_path()
+            .round_rect(Bounds::new(point(px(x0), px(18.0)), size(px(x1 - x0), px(MAP_H - 36.0))), px(28.0))
+            .fill()
+            .stroke_color(hexa(region.tint, if foggy { 0.15 } else { 0.35 }))
+            .line_width(1.5)
+            .stroke()
+            .font("800 15px sans-serif")
+            .text_align(CanvasTextAlign::Center)
+            .text_baseline(CanvasTextBaseline::Middle)
+            .fill_color(hexa(0xfff3b0, if foggy { 0.35 } else { 0.85 }))
+            .fill_text(&region.name.to_uppercase(), (x0 + x1) / 2.0, 46.0)
+            .font("italic 12px sans-serif")
+            .fill_color(hexa(0xece6ff, if foggy { 0.3 } else { 0.6 }))
+            .fill_text(region.topic, (x0 + x1) / 2.0, 66.0);
     }
     // The route, golden where it's been sailed.
     for i in 1..LEVELS.len() {
@@ -312,12 +339,12 @@ pub(crate) fn menu_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
 
     let info = dynamic(move || {
         ui.tick.get();
-        let (selected, best, time, fog_from, toast) = with_state(|s| {
+        let (selected, best, time, fog_from, toast, free_best) = with_state(|s| {
             let selected = match s.screen {
                 Screen::Menu { selected } => selected,
                 _ => 0,
             };
-            (selected, s.best[selected], s.times[selected], frontier(&s.best) + 2, s.toast.clone())
+            (selected, s.best[selected], s.times[selected], frontier(&s.best) + 2, s.toast.clone(), s.free_best[selected])
         });
         let level = &LEVELS[selected];
         let foggy = selected >= fog_from && best.is_none();
@@ -345,7 +372,12 @@ pub(crate) fn menu_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                         .flex_1()
                         .min_w(px(260.0))
                         .gap_1()
-                        .child(text(level.chapter).text_size(px(12.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.75)))
+                        .child(
+                            text(format!("{}  ·  {}", story::REGIONS[story::region_of(level.chapter)].name, level.chapter))
+                                .text_size(px(12.0))
+                                .letter_spacing(px(1.5))
+                                .text_color(hexa(0xc9b8ff, 0.75)),
+                        )
                         .child(
                             text(if foggy { format!("{}. Uncharted waters", selected + 1) } else { format!("{}. {}", selected + 1, level.title) })
                                 .text_size(px(22.0))
@@ -376,7 +408,11 @@ pub(crate) fn menu_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                         .items_end()
                         .child(view().flex_row().gap_1().children(level.unlock.chars().take(8).map(|c| chip(game::key_name(c), 0xfff3b0))))
                         .child(text(score).font_family(MONO).text_size(px(14.0)).text_color(hex(0xffd76b)))
-                        .child(time.map(|t| text(format!("⏱ best {}", clock(t as f64 * 100.0))).font_family(MONO).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.6)))),
+                        .child(time.map(|t| text(format!("⏱ best {}", clock(t as f64 * 100.0))).font_family(MONO).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.6))))
+                        .child(free_best.map(|b| text(format!("free play best {b} keys")).font_family(MONO).text_size(px(12.5)).text_color(hexa(GEM, 0.8))))
+                        .child((best.is_some()).then(|| {
+                            view().flex_row().gap_1().items_center().child(chip("f", GEM)).child(text("free play: every key").text_size(px(12.0)).text_color(hexa(0xece6ff, 0.6)))
+                        })),
                 ),
         )
     });
@@ -412,6 +448,8 @@ pub(crate) fn menu_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         .child(text("isle").text_color(hexa(0xffffff, 0.6)).mr(px(6.0)))
         .child(chip("j k", 0xfff3b0))
         .child(text("chapter").text_color(hexa(0xffffff, 0.6)).mr(px(6.0)))
+        .child(chip("J K", 0xfff3b0))
+        .child(text("region").text_color(hexa(0xffffff, 0.6)).mr(px(6.0)))
         .child(chip("Enter", 0xfff3b0))
         .child(text("sail in").text_color(hexa(0xffffff, 0.6)).mr(px(6.0)))
         .child(chip("d", GEM))

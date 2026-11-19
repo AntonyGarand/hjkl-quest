@@ -252,6 +252,36 @@ pub static CHAPTERS: &[Chapter] = &[
         ],
         unlock: "",
     },
+    Chapter {
+        name: "The Rhythm Reef",
+        pip: "The story's done, but the sea isn't. Out here things move when you do: every \
+              command you finish is one beat, and the reef dances to it.",
+        boss: "The Metronome Crab",
+        taunt: "Tick! Tock! Every move you make, I make one too!",
+        theme: Theme { sky: [0x061a2a, 0x0f3a4a, 0x2a6a6a], grass: 0x3a8a7a, stone: 0x5a6a8a, weather: Weather::Motes, day: false },
+        toolkit: &[],
+        unlock: "",
+    },
+    Chapter {
+        name: "The Gauntlet",
+        pip: "Every key you know, and isles that need most of them. No lessons now: just you, \
+              vim, and the shortest way through.",
+        boss: "The Hydra of Many Modes",
+        taunt: "Cut off one head and two keybindings grow back!",
+        theme: Theme { sky: [0x1a0a14, 0x3a1424, 0x6a2a2a], grass: 0x6a5a3a, stone: 0x7a4a4a, weather: Weather::Embers, day: false },
+        toolkit: &[],
+        unlock: "",
+    },
+    Chapter {
+        name: "The Trials",
+        pip: "Each trial takes something from you: a key, a line you may not touch, your spare \
+              keystrokes. Vim always has another way.",
+        boss: "The Magistrate of Keys",
+        taunt: "No arrows. No deletes. No excuses.",
+        theme: Theme { sky: [0x0e1424, 0x24304a, 0x5a6a8a], grass: 0x6a8aa0, stone: 0x6a6a8a, weather: Weather::Snow, day: false },
+        toolkit: &[],
+        unlock: "",
+    },
 ];
 
 /// The chapter a `Level::chapter` string names ("III · The Tower").
@@ -276,4 +306,31 @@ mod tests {
             assert!(chapter(level.chapter).is_some(), "no story for {}", level.chapter);
         }
     }
+}
+
+/// A stretch of the sea where the chapters share a topic.
+pub struct Region {
+    pub name: &'static str,
+    /// What the region is about, in a few words.
+    pub topic: &'static str,
+    /// Its chapters, by name.
+    pub chapters: &'static [&'static str],
+    /// The tint of its waters on the map.
+    pub tint: u32,
+}
+
+pub static REGIONS: &[Region] = &[
+    Region { name: "The Shallows", topic: "moving around", chapters: &["The Meadow", "The Word Bridges", "The Tower"], tint: 0x3f8f7a },
+    Region { name: "The Searching Straits", topic: "finding things", chapters: &["The Machine"], tint: 0x3f6fa8 },
+    Region { name: "The Mending Coast", topic: "changing text", chapters: &["The Workshop", "The Library", "The Observatory"], tint: 0x8f6a3f },
+    Region { name: "The Ex Highlands", topic: "the command line", chapters: &["The Summit", "The Scriptorium"], tint: 0x6a5aa8 },
+    Region { name: "The Power Isles", topic: "registers, macros and blocks", chapters: &["The Vaults", "The Clockwork", "The Terraces", "The Glacier"], tint: 0xa85a7a },
+    Region { name: "The Mainland", topic: "real files", chapters: &["The Mainland", "The Archive"], tint: 0x5a8f4a },
+    Region { name: "Beyond the Map", topic: "challenges, after the ending", chapters: &["The Rhythm Reef", "The Gauntlet", "The Trials"], tint: 0xa8483f },
+];
+
+/// The region chapter `label` lies in (its index in `REGIONS`).
+pub fn region_of(label: &str) -> usize {
+    let name = label.split_once(" · ").map_or(label, |(_, n)| n);
+    REGIONS.iter().position(|r| r.chapters.contains(&name)).unwrap_or(0)
 }

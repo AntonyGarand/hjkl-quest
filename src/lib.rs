@@ -147,6 +147,8 @@ struct State {
     grammar: std::collections::BTreeSet<String>,
     /// The fastest clear of each isle, in tenths of a second.
     times: Vec<Option<u32>>,
+    /// Fewest keys on each isle in free play.
+    free_best: Vec<Option<u32>>,
     /// When each isle was last cleared, counted in clears: what review
     /// drills pick from.
     practiced: Vec<u32>,
@@ -167,6 +169,14 @@ impl State {
     fn open(&mut self, i: usize) {
         self.screen = Screen::Play(Box::new(Session::new(i)));
         self.intro = !self.seen[i] && self.best[i].is_none();
+        self.drills.clear();
+        self.new_run();
+    }
+
+    /// Opens campaign isle `i` in free play: every key, no lesson to use.
+    fn open_free(&mut self, i: usize) {
+        self.screen = Screen::Play(Box::new(Session::free_play(i)));
+        self.intro = false;
         self.drills.clear();
         self.new_run();
     }
@@ -225,6 +235,7 @@ thread_local! {
         seen: load_seen(),
         grammar: Storage::get_item("hjkl-quest.grammar").map(|g| g.split('|').filter(|p| !p.is_empty()).map(String::from).collect()).unwrap_or_default(),
         times: load_numbers("hjkl-quest.times").into_iter().map(|t| t.map(|t| t as u32)).collect(),
+        free_best: load_numbers("hjkl-quest.free").into_iter().map(|t| t.map(|t| t as u32)).collect(),
         practiced: load_numbers("hjkl-quest.practiced").into_iter().map(|t| t.unwrap_or(0) as u32).collect(),
         clears: Storage::get_item("hjkl-quest.clears").and_then(|c| c.parse().ok()).unwrap_or(0),
         started: None,
@@ -530,6 +541,16 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                         let start = chapter_start(*selected);
                         *selected = if start < *selected { start } else { chapter_start(start.saturating_sub(1)) };
                     }
+                    Key::Char(c @ ('J' | 'K')) => {
+                        let here = story::region_of(LEVELS[*selected].chapter);
+                        let region = |k: usize| story::region_of(LEVELS[k].chapter);
+                        *selected = if c == 'J' {
+                            (*selected..n).find(|&k| region(k) != here).unwrap_or(*selected)
+                        } else {
+                            let start = (0..=*selected).rev().take_while(|&k| region(k) == here).last().unwrap_or(0);
+                            if start < *selected { start } else { (0..start).rev().take_while(|&k| region(k) == region(start.saturating_sub(1))).last().unwrap_or(0) }
+                        };
+                    }
                     Key::Char('G') => *selected = n - 1,
                     Key::Char('g') => *selected = 0,
                     Key::Char('m') => {
@@ -544,6 +565,16 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                     Key::Char('d') => {
                         open_daily(state);
                         scene_changed = true;
+                        return Some(Event::Moved);
+                    }
+                    Key::Char('f') => {
+                        let index = *selected;
+                        if state.best[index].is_some() {
+                            state.open_free(index);
+                            scene_changed = true;
+                        } else {
+                            state.toast = "Free play opens once an isle is cleared: then f replays it with every key you know.".into();
+                        }
                         return Some(Event::Moved);
                     }
                     Key::Char('r') => {
@@ -592,7 +623,7 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                 }
             }
             Screen::Play(session) => {
-                let (index, level, campaign) = (session.index, session.level(), session.in_campaign());
+                let (index, level, campaign, free) = (session.index, session.level(), session.in_campaign(), session.free);
                 if session.complete {
                     // A missed lesson: Enter tries the isle again.
                     let failed = !session.missed.is_empty();
@@ -601,6 +632,7 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                             let Screen::Play(done) = std::mem::replace(&mut state.screen, Screen::Menu { selected: index }) else { unreachable!() };
                             state.screen = Screen::Replay(Box::new(replay::Replay::new(*done)));
                         }
+                        Key::Char('r') | Key::Enter if free && (failed || key == Key::Char('r')) => state.open_free(index),
                         Key::Char('r') => state.retry(level, index, campaign),
                         Key::Enter if failed => state.retry(level, index, campaign),
                         Key::Enter | Key::Char('n') if !state.drills.is_empty() => {
@@ -609,7 +641,7 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                             state.open_level(next, from);
                             state.drills = rest;
                         }
-                        Key::Enter | Key::Char('n') if campaign && index + 1 < LEVELS.len() => state.open(index + 1),
+                        Key::Enter | Key::Char('n') if campaign && !free && index + 1 < LEVELS.len() => state.open(index + 1),
                         Key::Enter | Key::Char('n' | 'q') | Key::Esc => {
                             state.drills.clear();
                             state.screen = Screen::Menu { selected: index };
@@ -649,7 +681,11 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                                 scene_changed = true;
                             }
                             "e!" | "restart" | "r" => {
-                                state.retry(level, index, campaign);
+                                if free {
+                                    state.open_free(index);
+                                } else {
+                                    state.retry(level, index, campaign);
+                                }
                                 scene_changed = true;
                             }
                             "n" | "next" if campaign => {
@@ -675,6 +711,13 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                         }
                     }
                     Event::Complete if !session.cleared() => {}
+                    Event::Complete if free => {
+                        let n = session.keys.len() as u32;
+                        if state.free_best[index].is_none_or(|b| n < b) {
+                            state.free_best[index] = Some(n);
+                            save_numbers("hjkl-quest.free", state.free_best.iter().copied());
+                        }
+                    }
                     Event::Complete if !campaign => {
                         let n = session.keys.len();
                         if level.chapter == "Daily Tide" {
@@ -743,6 +786,19 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             motion.shake.keyframes(
                 [Keyframe::new(0.0), Keyframe::new(-4.0), Keyframe::new(4.0), Keyframe::new(-2.0), Keyframe::new(0.0)],
                 KeyframeTiming::new(220.0),
+            );
+        }
+        Event::Caught(p) => {
+            audio::play(Sfx::Locked, 0.6);
+            audio::play(Sfx::Hit, 0.5);
+            let (cx, cy) = tile_center(*p);
+            ui.burst_at.set((cx, cy));
+            ui.burst_color.set(0xff9a4c);
+            motion.burst.set(0.0);
+            motion.burst.timing(1.0, 500.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+            motion.shake.keyframes(
+                [Keyframe::new(0.0), Keyframe::new(-9.0), Keyframe::new(9.0), Keyframe::new(-5.0), Keyframe::new(3.0), Keyframe::new(0.0)],
+                KeyframeTiming::new(340.0),
             );
         }
         Event::Trapped(p) => {
@@ -928,6 +984,8 @@ fn draw_world(session: &Session) -> Painter {
                 TileLook::Selected
             } else if session.traps.contains(&p) {
                 TileLook::Trap
+            } else if session.is_frozen(row) {
+                TileLook::Ice
             } else if wrong {
                 TileLook::Wrong
             } else if goal.is_some() && ch == '.' {
@@ -1179,6 +1237,7 @@ enum TileLook {
     Wrong,
     Selected,
     Trap,
+    Ice,
 }
 
 impl TileLook {
@@ -1202,6 +1261,7 @@ impl TileLook {
             TileLook::Wrong => EMBER,
             TileLook::Selected => SELECT,
             TileLook::Trap => TRAP,
+            TileLook::Ice => 0x8fc3e0,
         }
     }
 }
@@ -1328,6 +1388,21 @@ fn draw_gems(session: &Session, bob: &AnimatedValue) -> Painter {
             continue;
         }
         let (cx, cy) = tile_center(p);
+        let left = session.fades_in(p);
+        if let Some(n) = left {
+            let urgent = n <= 2;
+            painter = painter
+                .fill_color(hexa(if urgent { 0xff6b5a } else { 0x0b0820 }, 0.85))
+                .begin_path()
+                .arc(cx + 14.0, cy - 18.0, 9.0, 0.0, TAU)
+                .fill()
+                .font("800 11px monospace")
+                .text_align(CanvasTextAlign::Center)
+                .text_baseline(CanvasTextBaseline::Middle)
+                .fill_color(hex(0xfff3b0))
+                .fill_text(&n.to_string(), cx + 14.0, cy - 17.5)
+                .global_alpha(if urgent { 0.55 } else { 0.85 });
+        }
         painter = painter
             .fill_color(hexa(GEM, 0.22))
             .begin_path()
@@ -1360,7 +1435,66 @@ fn draw_gems(session: &Session, bob: &AnimatedValue) -> Painter {
             .line_to(-2.5, -1.0)
             .close_path()
             .fill()
-            .restore();
+            .restore()
+            .global_alpha(1.0);
+    }
+    painter
+}
+
+/// The sentries: lantern-bearing ghosts, an arrow showing where each
+/// marches next.
+fn draw_sentries(session: &Session, bob: &AnimatedValue) -> Painter {
+    let mut painter = Painter::new();
+    for s in &session.sentries {
+        let (cx, cy) = tile_center(s.at);
+        let d = s.dir as f32;
+        painter = painter
+            .fill_color(hexa(0x000000, 0.3))
+            .begin_path()
+            .ellipse_at(cx, cy + 3.0, 10.0, 4.0)
+            .fill()
+            .save()
+            .translate(cx, cy - 16.0)
+            .translate(0.0, &bob.mul(0.6))
+            .fill_style(
+                CanvasGradient::radial(point(px(0.0), px(0.0)), px(2.0), point(px(0.0), px(0.0)), px(22.0))
+                    .add_color_stop(percentage(0.0), hexa(0xff9a4c, 0.45))
+                    .add_color_stop(percentage(1.0), hexa(0xff9a4c, 0.0)),
+            )
+            .begin_path()
+            .arc(0.0, 0.0, 22.0, 0.0, TAU)
+            .fill()
+            .fill_color(hex(0xe9e4f5))
+            .begin_path()
+            .move_to(-9.0, 10.0)
+            .line_to(-9.0, -2.0)
+            .arc(0.0, -2.0, 9.0, std::f32::consts::PI, 0.0)
+            .line_to(9.0, 10.0)
+            .line_to(6.0, 7.0)
+            .line_to(3.0, 10.0)
+            .line_to(0.0, 7.0)
+            .line_to(-3.0, 10.0)
+            .line_to(-6.0, 7.0)
+            .close_path()
+            .fill()
+            .fill_color(hex(0x1a1430))
+            .begin_path()
+            .arc(-3.5, -2.0, 1.8, 0.0, TAU)
+            .arc(3.5, -2.0, 1.8, 0.0, TAU)
+            .fill()
+            .fill_color(hex(0xffb84c))
+            .begin_path()
+            .arc(11.0, 4.0, 3.0, 0.0, TAU)
+            .fill()
+            .restore()
+            // Where it goes next.
+            .fill_color(hexa(0xff9a4c, 0.85))
+            .begin_path()
+            .move_to(cx - 5.0, cy + 9.0 * d)
+            .line_to(cx + 5.0, cy + 9.0 * d)
+            .line_to(cx, cy + 15.0 * d)
+            .close_path()
+            .fill();
     }
     painter
 }
@@ -1545,6 +1679,10 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
     for bug in &session.bugs {
         let (x, y) = (bug.at.col as f32 * cw + cw / 2.0, bug.at.row as f32 * ch + ch / 2.0);
         painter = painter.fill_color(hex(BUG)).begin_path().arc(x, y, (cw * 0.6).max(2.5), 0.0, TAU).fill();
+    }
+    for s in &session.sentries {
+        let (x, y) = (s.at.col as f32 * cw + cw / 2.0, s.at.row as f32 * ch + ch / 2.0);
+        painter = painter.fill_color(hex(0xff9a4c)).begin_path().arc(x, y, (cw * 0.6).max(2.5), 0.0, TAU).fill();
     }
     let cur = e.cursor;
     painter = painter
@@ -2076,6 +2214,7 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
     let card = motion.clone();
     let minimap = motion.clone();
     let bugs = motion.clone();
+    let sentries = motion.clone();
     let trail = motion.clone();
     let boss = motion.clone();
     let stage = view()
@@ -2130,6 +2269,17 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                             .bottom_0(),
                         )
                         .child(canvas(move || draw_trail(ui.trail.get(), &trail.trail)).absolute().top_0().left_0().right_0().bottom_0())
+                        .child(
+                            canvas(move || {
+                                ui.tick.get();
+                                session_value(|s| draw_sentries(s, &sentries.bob)).unwrap_or_default()
+                            })
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .right_0()
+                            .bottom_0(),
+                        )
                         .child(
                             canvas(move || {
                                 ui.tick.get();
@@ -2648,10 +2798,14 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         let (took, best_time, drills_left) = with_state(|s| (s.took.unwrap_or(0.0), s.times[index], s.drills.len()));
         let count = session_value(|s| s.keys.len()).unwrap();
         let (habits, trapped) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.trapped)).unwrap();
-        let last = campaign && index + 1 == LEVELS.len();
+        let free = session_value(|s| s.free).unwrap_or(false);
+        let free_best = with_state(|s| s.free_best[index]);
+        let last = campaign && !free && level.title == levels::ENDING;
         let missed = session_value(|s| s.missed.clone()).unwrap_or_default();
         let failed = !missed.is_empty();
-        let verdict = if failed {
+        let verdict = if failed && free {
+            "Not this time."
+        } else if failed {
             "Lesson missed: the isle isn't cleared."
         } else if count < par {
             "Under par! You beat the golf solution."
@@ -2690,17 +2844,27 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .text_color(hex(if failed { 0xff8a70 } else { 0xffd76b })),
                         )
                         .child(text(verdict).text_size(px(18.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0)))
-                        .child((boss && !failed).then(|| {
+                        .child(free.then(|| {
+                            text(match free_best {
+                                Some(b) => format!("FREE PLAY  ·  every key allowed  ·  your best {b} keys"),
+                                None => "FREE PLAY  ·  every key allowed".to_string(),
+                            })
+                            .font_family(MONO)
+                            .text_size(px(12.0))
+                            .letter_spacing(px(1.0))
+                            .text_color(hex(GEM))
+                        }))
+                        .child((boss && !failed && !free).then(|| {
                             let name = story::chapter(level.chapter).map_or("", |c| c.boss);
                             text(format!("⚔ {name} is defeated!")).text_size(px(14.0)).font_weight(FontWeight::BOLD).text_color(hex(0xff9a6b))
                         }))
-                        .child((boss && !failed).then(|| toolkit_box(level.chapter)).flatten())
+                        .child((boss && !failed && !free).then(|| toolkit_box(level.chapter)).flatten())
                         .child(
                             text(format!(
                                 "⏱ {}{}",
                                 clock(took),
                                 match best_time {
-                                    Some(t) if campaign && !failed => format!("   ·   best {}", clock(t as f64 * 100.0)),
+                                    Some(t) if campaign && !failed && !free => format!("   ·   best {}", clock(t as f64 * 100.0)),
                                     _ => String::new(),
                                 }
                             ))
@@ -2748,7 +2912,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                         .text_color(hexa(0xece6ff, 0.6)),
                                 )
                         }))
-                        .child(failed.then(|| {
+                        .child((failed && !free).then(|| {
                             view()
                                 .w_full()
                                 .gap_2()
@@ -2809,7 +2973,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                         "try again".to_string()
                                     } else if drills_left > 0 {
                                         format!("next drill ({drills_left} left)")
-                                    } else if last || !campaign {
+                                    } else if last || !campaign || free {
                                         "back to the map".to_string()
                                     } else {
                                         "next isle".to_string()

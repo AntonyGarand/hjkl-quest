@@ -957,7 +957,7 @@ impl Editor {
                     let Some(delim) = arg.chars().next().filter(|c| !c.is_alphanumeric() && *c != ' ') else {
                         return Outcome::Bell("Usage: :s/old/new/g".into());
                     };
-                    let parts: Vec<&str> = arg[delim.len_utf8()..].splitn(3, delim).collect();
+                    let parts: Vec<&str> = split_unescaped(&arg[delim.len_utf8()..], delim, 3);
                     let pat = match parts[0] {
                         "" => match &self.last_search {
                             Some(p) => p.clone(),
@@ -1064,7 +1064,7 @@ impl Editor {
                 let Some(delim) = arg.chars().next().filter(|c| !c.is_alphanumeric() && *c != ' ') else {
                     return Outcome::Bell("Usage: :g/pattern/command".into());
                 };
-                let parts: Vec<&str> = arg[delim.len_utf8()..].splitn(2, delim).collect();
+                let parts: Vec<&str> = split_unescaped(&arg[delim.len_utf8()..], delim, 2);
                 let pat = parts[0].to_string();
                 let sub = parts.get(1).copied().unwrap_or("").trim().to_string();
                 if sub.is_empty() || pat.is_empty() {
@@ -3468,6 +3468,29 @@ impl Editor {
             }
         }
     }
+}
+
+/// Splits `s` at `delim` into at most `n` parts, skipping a delimiter with
+/// a backslash before it (`:s/a\/b/c/` has the pattern `a\/b`).
+fn split_unescaped(s: &str, delim: char, n: usize) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut escaped = false;
+    for (i, c) in s.char_indices() {
+        if parts.len() + 1 == n {
+            break;
+        }
+        if escaped {
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == delim {
+            parts.push(&s[start..i]);
+            start = i + c.len_utf8();
+        }
+    }
+    parts.push(&s[start..]);
+    parts
 }
 
 fn mul_counts(a: Option<usize>, b: Option<usize>) -> Option<usize> {

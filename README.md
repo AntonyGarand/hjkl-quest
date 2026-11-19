@@ -1,6 +1,6 @@
 # HJKL Quest
 
-Learn vim by walking the **Buffer Archipelago**: forty-seven floating isles, each made of text, each teaching a few
+Learn vim by walking the **Buffer Archipelago**: fifty-seven floating isles, each made of text, each teaching a few
 commands. The world *is* the buffer: every character is a tile, the cursor is a small wisp that hops between
 them, and every command you learn moves you (or reshapes the land) exactly as it would in vim.
 
@@ -12,9 +12,16 @@ native desktop app on Windows, macOS and Linux.
 
 ## How it plays
 
-- **Sail a world map.** The isles lie on a route across the sea, chapter by chapter; Pip the ferry owl sails it
-  with `h`/`l` (isle by isle) and `j`/`k` (chapter by chapter). Cleared isles fly a flag, isles past the next one
+- **Sail a world map.** The isles lie on a route across the sea, their chapters grouped in regions by topic (the
+  Shallows for moving, the Searching Straits, the Mending Coast for editing, the Ex Highlands, the Power Isles,
+  the Mainland, and Beyond the Map for the challenges). Pip the ferry owl sails it with `h`/`l` (isle by isle),
+  `j`/`k` (chapter by chapter) and `J`/`K` (region by region). Cleared isles fly a flag, isles past the next one
   to clear are in fog, and boss lairs mark each chapter's last isle.
+- **A toolkit from every boss.** Beating a chapter's boss shows commands like the ones it taught, unlocked from
+  then on: `H M L + -` after the Meadow, `{n}|` and `_` after the Word Bridges, `ge g_ ( )` after the Tower,
+  `gi gp Ctrl-r` after the Library, `& g&`, pattern groups and `|` after the Summit…
+- **Free play** (`f` on the map, on a cleared isle): the isle again with every key you know and no lesson to use,
+  with its own best score.
 - **A story and a look per chapter.** Pip greets you at each chapter's first isle; each chapter has its own sky,
   ground and weather (fireflies in the Meadow, embers in the Workshop, snow on the Glacier, rain on the Summit…).
 - **Bosses.** Each chapter's last isle is guarded by a boss (the Sheep King, the Rust Golem, the Frost Wyrm…)
@@ -49,9 +56,10 @@ native desktop app on Windows, macOS and Linux.
   habits to break.
 - **The address follows you.** On the web the current isle is in the URL (`…/hjkl-quest/#looking-back`, `#map`
   on the map), so reloading restarts the isle, links open an isle directly, and back/forward move between them.
-- **Use the lesson.** Each isle names the commands it's about (Word Hopping: `w e b`; Search Party: `/` and `n`;
-  Tag, You're It: `it`/`at` and `ip`/`ap`…), ticked off as you use them. Reaching the goal any other way fails
-  the isle: no stars, and the card says what was missing. Every golf solution is checked to use them.
+- **Use the lesson.** Each isle names its main ideas (Word Hopping: `w`, and `b` or `e`; Search Party: `/` and
+  `n`…), ticked off as you use them. Reaching the goal without them fails the isle: no stars, and the card says
+  what was missing. Variants worth trying (Punctuation Pass's `E`, Demolition's `D`) are marked optional and
+  never fail an isle. Every golf solution is checked to use the required ones.
 - **Vim golf.** Every isle has a *par*: the keystrokes of a short known solution. Finish at par or under for
   three stars, and compare your keys with the golf line afterwards (hidden until you hover it, so it never
   spoils a retry).
@@ -77,6 +85,12 @@ native desktop app on Windows, macOS and Linux.
 | XIII · The Glacier | visual block `Ctrl-v` with `I A $A c`, `gn cgn` with `.`, `it at ip ap` |
 | XIV · The Mainland | real files: renaming a variable in Rust (`*` `ciw` `n` `.`), fixing JSON, reordering a changelog, sorting imports (`:sort u`) |
 | XV · The Archive | `:g :v`, ranges `:4,6m0 :$t0 :'<,'>`, `:norm`, `:sort`, a grand refactor, and the ending |
+| XVI · The Rhythm Reef | after the ending, turn-based: crystals that fade after so many commands, sentries that march a row per command, bugs |
+| XVII · The Gauntlet | all of vim on hard isles: swapping names with pattern groups, numbering a list with a macro and `Ctrl-a`, stripping tags |
+| XVIII · The Trials | each takes something away: `hjkl` banned, frozen lines no edit may touch, `x d` banned, a five-key budget |
+
+Patterns are vim's: `.` `*` `\+` `\=` `\{n,m}` `[a-z]` `\d \w \s` `\< \>` `\|` `\( \)` `\1` `\zs \ze` and very
+magic `\v`, with `& \1 \u \U` in replacements; `|` chains ex commands.
 
 ### Everything vimtutor teaches
 
@@ -114,9 +128,10 @@ For development, `HJKL_LEVEL=12 cargo run` opens an isle directly.
 | `src/intro.rs` | The intro card shown before an isle |
 | `src/diff.rs` | How the buffer differs from the goal: extra characters, characters in place, and where missing text goes |
 | `src/levels.rs` | The campaign: maps, crystals, goals, unlocked keys and each isle's golf solution |
-| `src/game.rs` | A level being played: key locking, crystals, completion, stars. Its tests replay every golf solution and check it clears the isle at exactly par. |
+| `src/game.rs` | A level being played: key locking, crystals (fading ones too), bugs, sentries, frozen lines, banned keys, free play, completion, stars. Its tests replay every golf solution and check it clears the isle at exactly par. |
 | `src/audio.rs` | Sound effects and the ambient pad, synthesized into WAV at start-up |
-| `src/story.rs` | Pip's lines, the bosses and each chapter's sky, ground and weather |
+| `src/story.rs` | Pip's lines, the bosses, each chapter's sky, ground, weather and toolkit, and the map's regions |
+| `src/regex.rs` | Vim's patterns: a small backtracking matcher, and `:s` replacements with groups |
 | `src/hints.rs` | What can follow a half-typed command |
 | `src/grammar.rs` | Operators and motions as verbs and nouns, and how a command splits into them |
 | `src/daily.rs` | The daily tide: a seeded puzzle generator |

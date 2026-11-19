@@ -43,10 +43,23 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
         } else {
             "Goal: collect every crystal ◆."
         };
-        let goal = match level.budget() {
+        let mut goal = match level.budget() {
             Some(b) => format!("{goal} Only {b} keystrokes allowed: run out and the isle crumbles."),
             None => goal.to_string(),
         };
+        if !level.fading().is_empty() {
+            goal.push_str(" Numbered crystals fade: the number is how many commands each has left.");
+        }
+        if !level.sentries().is_empty() {
+            goal.push_str(" Sentries march a row up or down with every command you finish: meet one and you're back at the start.");
+        }
+        if !level.frozen().is_empty() {
+            goal.push_str(" The icy lines are frozen: no edit may change them.");
+        }
+        if !level.banned().is_empty() {
+            let keys: Vec<String> = level.banned().chars().map(|c| c.to_string()).collect();
+            goal.push_str(&format!(" Banned here: {}.", keys.join(" ")));
+        }
         let cards = examples::examples(level.title).iter().map(move |&(text, keys)| example_card(ui, text, keys));
         let heading = |label: &'static str| text(label).text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(6.0));
         let start = view()

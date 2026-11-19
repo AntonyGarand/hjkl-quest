@@ -19,6 +19,8 @@ pub enum Event {
     Trapped(Pos),
     /// The cursor caught a bug, here.
     Squashed(Pos),
+    /// A sentry caught the cursor, here, and sent it back to the start.
+    Caught(Pos),
     None,
 }
 
@@ -35,6 +37,16 @@ pub struct Bug {
 pub const HATCH_EVERY: usize = 8;
 pub const MAX_BUGS: usize = 6;
 
+/// A sentry: it marches up and down its column, one row per command, and
+/// turns at the isle's edge or where its column runs out. Whoever it meets
+/// goes back to the start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Sentry {
+    pub at: Pos,
+    /// +1 marching down, -1 up.
+    pub dir: i8,
+}
+
 #[derive(Clone)]
 pub struct Session {
     /// The campaign isle this is, or (for daily puzzles and drills) the
@@ -46,6 +58,15 @@ pub struct Session {
     pub squashed: usize,
     /// Commands the bugs have crawled for.
     pub crawled: usize,
+    /// Crystals that fade: where, and how many commands each has left.
+    pub fading: Vec<(Pos, usize)>,
+    pub sentries: Vec<Sentry>,
+    /// Times a sentry caught the player this run.
+    pub caught: usize,
+    /// Free play: every key, no lesson to use, no budget.
+    pub free: bool,
+    /// The texts of the frozen lines, which no edit may change.
+    frozen: Vec<String>,
     pub editor: Editor,
     pub gems: Vec<(Pos, bool)>,
     pub keys: Vec<Key>,
@@ -119,6 +140,11 @@ impl Session {
             bugs: level.bugs(),
             squashed: 0,
             crawled: 0,
+            fading: level.fading(),
+            sentries: level.sentries(),
+            caught: 0,
+            free: false,
+            frozen: level.frozen().into_iter().filter_map(|r| level.text().lines().nth(r).map(String::from)).collect(),
             editor,
             gems: level.gems().into_iter().map(|p| (p, false)).collect(),
             keys: Vec::new(),
@@ -135,6 +161,31 @@ impl Session {
         };
         session.collect();
         session
+    }
+
+    /// Free play of campaign isle `index`: every key is there, and the
+    /// isle clears on reaching the goal, whatever was used.
+    pub fn free_play(index: usize) -> Self {
+        let mut s = Self::new(index);
+        s.free = true;
+        s.allowed = unlocked(LEVELS.len() - 1);
+        s
+    }
+
+    /// Whether row `row` holds a frozen line.
+    pub fn is_frozen(&self, row: usize) -> bool {
+        let line: String = self.editor.lines.get(row).map(|l| l.iter().collect()).unwrap_or_default();
+        self.frozen.contains(&line)
+    }
+
+    /// Whether every frozen line is still there, unchanged.
+    fn frozen_intact(&self) -> bool {
+        let text = self.editor.text();
+        let lines: Vec<&str> = text.split('\n').collect();
+        self.frozen.iter().all(|f| {
+            let want = self.frozen.iter().filter(|g| *g == f).count();
+            lines.iter().filter(|l| **l == f.as_str()).count() >= want
+        })
     }
 
     pub fn level(&self) -> &'static Level {
@@ -161,6 +212,11 @@ impl Session {
 
     pub fn gems_left(&self) -> usize {
         self.gems.iter().filter(|(_, got)| !got).count()
+    }
+
+    /// Commands left before the crystal at `p` fades, if it fades.
+    pub fn fades_in(&self, p: Pos) -> Option<usize> {
+        self.fading.iter().find(|(f, _)| *f == p).map(|(_, n)| *n)
     }
 
     /// Whether the buffer still differs from the goal.
@@ -216,6 +272,16 @@ impl Session {
         if self.complete {
             return Event::None;
         }
+        let normalish = matches!(self.editor.mode, Mode::Normal | Mode::Visual { .. } | Mode::Block);
+        if normalish
+            && !self.editor.awaiting_char()
+            && let Key::Char(c) = key
+            && self.level().banned().contains(c)
+            && !(c == '0' && self.editor.in_count())
+        {
+            self.message = format!("`{c}` is banned on this isle: find another way");
+            return Event::Locked(c);
+        }
         if let Err(c) = self.is_allowed(key) {
             self.message = if c == '⏎' {
                 "That key does nothing in normal mode".into()
@@ -245,7 +311,16 @@ impl Session {
         // A command line ends with Enter: remember it whole.
         let line = (matches!(before_mode, Mode::Command { .. }) && key == Key::Enter)
             .then(|| format!("{}{}", self.editor.cmd_prefix(), self.editor.cmdline));
+        let before = (!self.frozen.is_empty()).then(|| self.editor.clone());
         let outcome = self.editor.feed(key);
+        if let Some(before) = before
+            && !self.frozen_intact()
+        {
+            // The ice holds: the edit didn't happen.
+            self.editor = before;
+            self.message = "❄ That line is frozen: change the others".into();
+            return Event::Bell;
+        }
         match line {
             Some(line) => self.used.push(line),
             None if matches!(before_mode, Mode::Normal | Mode::Visual { .. } | Mode::Block)
@@ -319,9 +394,16 @@ impl Session {
         if let Some(at) = self.crawl() {
             event = Event::Squashed(at);
         }
+        if let Some(at) = self.march() {
+            event = Event::Caught(at);
+        }
+        if self.fade() {
+            return Event::Complete;
+        }
         if self.check_complete() {
             event = Event::Complete;
         } else if let Some(budget) = self.level().budget()
+            && !self.free
             && self.keys.len() >= budget
         {
             // Out of keystrokes: the isle ends, not cleared.
@@ -383,6 +465,60 @@ impl Session {
         (caught > 0).then_some(at)
     }
 
+    /// Whether a whole command was just done (not a half-typed one, and
+    /// not in the middle of typing text or a command line).
+    fn command_done(&self) -> bool {
+        let typing = matches!(self.editor.mode, Mode::Command { .. } | Mode::Insert | Mode::Replace | Mode::Confirm);
+        self.editor.pending().is_empty() && !typing
+    }
+
+    /// A command was done: the sentries march a row. One that meets the
+    /// cursor (or that the cursor walked into) sends it back to the start.
+    fn march(&mut self) -> Option<Pos> {
+        if self.sentries.is_empty() || !self.command_done() {
+            return None;
+        }
+        let at = self.editor.cursor;
+        let walked_in = self.sentries.iter().any(|s| s.at == at);
+        let lines = &self.editor.lines;
+        for s in &mut self.sentries {
+            let open = |row: isize| row >= 0 && (row as usize) < lines.len() && s.at.col < lines[row as usize].len();
+            if !open(s.at.row as isize + s.dir as isize) {
+                s.dir = -s.dir;
+            }
+            let next = s.at.row as isize + s.dir as isize;
+            if open(next) {
+                s.at.row = next as usize;
+            }
+        }
+        if !walked_in && !self.sentries.iter().any(|s| s.at == at) {
+            return None;
+        }
+        self.caught += 1;
+        self.editor.set_cursor(self.level().start());
+        self.message = "A sentry caught you! Back to the start: time your moves".into();
+        Some(at)
+    }
+
+    /// A command was done: the fading crystals dim. One that fades out
+    /// ends the isle, not cleared. Returns whether that happened.
+    fn fade(&mut self) -> bool {
+        if self.fading.is_empty() || !self.command_done() || self.complete {
+            return false;
+        }
+        let gems = &self.gems;
+        self.fading.retain(|(p, _)| gems.iter().any(|(g, got)| g == p && !got));
+        for (_, left) in &mut self.fading {
+            *left = left.saturating_sub(1);
+        }
+        if self.fading.iter().any(|(_, left)| *left == 0) {
+            self.complete = true;
+            self.missed = vec!["a crystal faded: reach them sooner, with bigger jumps".into()];
+            return true;
+        }
+        false
+    }
+
     fn drop_cmdline_keys(&mut self) {
         if let Some(start) = self.cmd_start.take() {
             self.keys.truncate(start);
@@ -417,7 +553,7 @@ impl Session {
             && self.editor.pending().is_empty()
         {
             self.complete = true;
-            self.missed = self.lesson_left().into_iter().map(String::from).collect();
+            self.missed = if self.free { Vec::new() } else { self.lesson_left().into_iter().map(String::from).collect() };
         }
         self.complete
     }
@@ -592,6 +728,59 @@ mod tests {
         assert_eq!(last, Event::Complete);
         assert!(s.complete && !s.cleared());
         assert_eq!(s.missed, vec!["finish within 10 keys".to_string()]);
+    }
+
+    fn isle(title: &str) -> usize {
+        LEVELS.iter().position(|l| l.title == title).unwrap()
+    }
+
+    #[test]
+    fn crystals_fade_and_sentries_catch() {
+        // Stepping is too slow for a fading crystal.
+        let mut s = Session::new(isle("Fading Lights"));
+        for k in parse_keys("ll") {
+            s.press(k);
+        }
+        assert!(s.complete && !s.cleared(), "{:?}", s.missed);
+        assert!(s.missed[0].contains("faded"));
+        // Standing still where a sentry is going sends the wisp home.
+        let mut s = Session::new(isle("Night Watch"));
+        let mut last = Event::None;
+        for k in parse_keys("3j6l7|") {
+            last = s.press(k);
+        }
+        assert_eq!(last, Event::Caught(Pos { row: 3, col: 6 }));
+        assert_eq!((s.caught, s.editor.cursor), (1, LEVELS[isle("Night Watch")].start()));
+    }
+
+    #[test]
+    fn banned_keys_and_frozen_lines_hold() {
+        let mut s = Session::new(isle("No Arrows"));
+        assert_eq!(s.press(Key::Char('l')), Event::Locked('l'));
+        assert_eq!(s.editor.cursor, Pos { row: 0, col: 0 });
+        assert!(s.keys.is_empty());
+        let mut s = Session::new(isle("Thin Ice"));
+        let before = s.editor.text();
+        let mut last = Event::None;
+        for k in parse_keys(":%s/teh/the/g<CR>") {
+            last = s.press(k);
+        }
+        assert_eq!(last, Event::Bell);
+        assert_eq!(s.editor.text(), before);
+        assert!(s.message.contains("frozen"));
+    }
+
+    #[test]
+    fn free_play_allows_everything_and_asks_for_nothing() {
+        let i = isle("Search Party");
+        let mut s = Session::free_play(i);
+        for k in parse_keys("/g<CR>/g<CR>/g<CR>") {
+            s.press(k);
+        }
+        assert!(s.cleared(), "{:?}", s.missed);
+        // Keys from much later isles work.
+        let mut s = Session::free_play(0);
+        assert_ne!(s.press(Key::Char('w')), Event::Locked('w'));
     }
 
     #[test]
