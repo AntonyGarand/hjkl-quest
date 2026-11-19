@@ -92,13 +92,10 @@ impl Session {
         }
         match key {
             Key::Esc => Ok(()),
-            Key::CtrlR => {
-                if self.allowed.contains('u') {
-                    Ok(())
-                } else {
-                    Err('r')
-                }
-            }
+            // Undo and redo are always there, so a wrong edit never strands
+            // the player before the isle that teaches them properly.
+            Key::CtrlR => Ok(()),
+            Key::Char('u') if self.editor.mode == Mode::Normal => Ok(()),
             Key::Enter | Key::Backspace => Err('⏎'),
             // The command line always opens, for the game's own commands;
             // real ex commands wait until `:` is learned.
@@ -304,6 +301,19 @@ mod tests {
         }
         assert!(s.complete);
         assert_eq!(s.keys.len(), 14);
+    }
+
+    #[test]
+    fn a_wrong_edit_can_always_be_undone() {
+        // Chomp (isle 11) comes before undo's own isle.
+        let mut s = Session::new(10);
+        let before = s.editor.text();
+        assert_eq!(s.press(Key::Char('x')), Event::Edited);
+        assert_ne!(s.editor.text(), before);
+        assert_eq!(s.press(Key::Char('u')), Event::Edited);
+        assert_eq!(s.editor.text(), before);
+        assert_eq!(s.press(Key::CtrlR), Event::Edited);
+        assert_ne!(s.editor.text(), before);
     }
 
     #[test]

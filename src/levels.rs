@@ -322,6 +322,7 @@ rock rock sand gold",
             ("x", "delete the character under the cursor"),
             ("X", "delete the character before the cursor"),
             ("r{c}", "replace the character under the cursor with c"),
+            ("u  Ctrl-r", "undo a mistake, redo it (always available from here on)"),
         ],
         unlock: "xXr",
         map: "
@@ -430,13 +431,12 @@ hip hip hooray
         chapter: "VI · The Library",
         title: "Time Travel",
         story: "The archivist repeats the same edit everywhere. The dot command \
-                repeats your last change, and u undoes mistakes.",
+                repeats your last change, as many times as you like.",
         teaches: &[
             (".", "repeat the last change"),
-            ("u", "undo"),
-            ("Ctrl-r", "redo"),
+            ("u  Ctrl-r", "undo and redo, which you've had since the Workshop"),
         ],
-        unlock: "u.",
+        unlock: ".",
         map: "
 x = 1
 y = 2

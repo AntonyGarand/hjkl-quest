@@ -28,8 +28,8 @@ native desktop app on Windows, macOS and Linux.
 | II · The Word Bridges | `w b e`, `W B E`, `0 ^ $` |
 | III · The Tower | `gg G {n}G`, `f F t T ; ,`, `{ }` |
 | IV · The Machine | `%`, `/ n N * #` |
-| V · The Workshop | `x X r`, `d{motion} dd D`, `c{motion} C s S` |
-| VI · The Library | `i a I A o O`, `y yy p P`, `. u Ctrl-r` |
+| V · The Workshop | `x X r`, `u Ctrl-r` (from here on), `d{motion} dd D`, `c{motion} C s S` |
+| VI · The Library | `i a I A o O`, `y yy p P`, `.` |
 | VII · The Observatory | text objects `iw aw i( a( i" …`, visual `v V`, `~ U u J` |
 | VIII · The Summit | `:s`, `:%s///g`, `:{n}`, and a final refactor |
 
