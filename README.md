@@ -1,6 +1,6 @@
 # HJKL Quest
 
-Learn vim by walking the **Buffer Archipelago**: forty-one floating isles, each made of text, each teaching a few
+Learn vim by walking the **Buffer Archipelago**: forty-seven floating isles, each made of text, each teaching a few
 commands. The world *is* the buffer: every character is a tile, the cursor is a small wisp that hops between
 them, and every command you learn moves you (or reshapes the land) exactly as it would in vim.
 
@@ -11,6 +11,26 @@ native desktop app on Windows, macOS and Linux.
 
 ## How it plays
 
+- **Sail a world map.** The isles lie on a route across the sea, chapter by chapter; Pip the ferry owl sails it
+  with `h`/`l` (isle by isle) and `j`/`k` (chapter by chapter). Cleared isles fly a flag, isles past the next one
+  to clear are in fog, and boss lairs mark each chapter's last isle.
+- **A story and a look per chapter.** Pip greets you at each chapter's first isle; each chapter has its own sky,
+  ground and weather (fireflies in the Meadow, embers in the Workshop, snow on the Glacier, rain on the Summit…).
+- **Bosses.** Each chapter's last isle is guarded by a boss (the Sheep King, the Rust Golem, the Frost Wyrm…)
+  with a health bar: every crystal, bug or fixed character is a hit, and it flinches.
+- **Typo bugs** crawl one tile per command and hatch twins every 8 commands; land on them to squash them. Two
+  isles (Bug Hunt, Infestation) are about predicting where they'll be: `3fb`, `/bug⏎ n n`.
+- **Hints for half-typed commands.** Type `d`, `c`, `y`, `g`, `"`, `f`, `ci`… and a card lists what can come
+  next, from the keys you've learned: `dd` the line, `w` to the next word, `i{obj}` a text object…
+- **Your vim grammar** (`v` on the map): a grid of 8 operators by 35 motions and text objects. Every pair you use
+  (`dw`, `ci"`, `gUiw`, `>}`…) lights up, with a toast the first time.
+- **Replays** (`p` on the completion card): your run and the golf line side by side, key by key, with the habits
+  the coach spotted.
+- **Time trials**: a clock runs from your first key, and each isle keeps its best time.
+- **The daily tide** (`d` on the map): a new editing puzzle every day, generated from the date, the same for
+  everyone; the setter's keystrokes are the par.
+- **Review drills** (`r` on the map): five drills from the isles you cleared longest ago, built from their
+  examples, to keep what they teach fresh.
 - **Move with vim keys only.** Each isle unlocks new commands; keys you haven't learned yet are refused (and cost
   nothing).
 - **Collect every crystal ◆** on the movement isles, or **make the text match the goal** on the editing isles.
@@ -37,14 +57,14 @@ native desktop app on Windows, macOS and Linux.
 - A **minimap** in the corner shows the whole isle with its letters and line/column numbers, the crystals left, what's missing and the
   part of it on screen.
 - `:q` returns to the map, `:e!` restarts the isle, `:n` skips it, `:mute` toggles sound. These work from the
-  first isle and never cost keystrokes; real ex commands (`:s`, `:%s`, `:{n}`) unlock on isle 19.
+  first isle and never cost keystrokes; real ex commands (`:s`, `:%s`, `:{n}`) unlock on isle 22.
 
 | Chapter | Commands |
 |---|---|
 | I · The Meadow | `h j k l`, counts, `:q! :wq`, `:help` |
 | II · The Word Bridges | `w b e`, `W B E`, `0 ^ $` (on a 10-keystroke budget) |
-| III · The Tower | `gg G {n}G`, `f F t T ; ,`, `{ }` |
-| IV · The Machine | `%`, `/ ? n N * #`, `Ctrl-o Ctrl-i Ctrl-g` |
+| III · The Tower | `gg G {n}G`, `f F t T ; ,`, `{ }`, and a bug hunt |
+| IV · The Machine | `%`, `/ ? n N * #`, `Ctrl-o Ctrl-i Ctrl-g`, and an infestation |
 | V · The Workshop | `x X r ~`, `u U Ctrl-r` (undo from here on), `d{motion} dd D`, counts on operators `2dd d3w`, `c{motion} C s S` |
 | VI · The Library | `i a I A o O`, `y yy p P`, `.` |
 | VII · The Observatory | text objects `iw aw i( a( i" …`, visual `v V`, `~ U u J` |
@@ -54,7 +74,8 @@ native desktop app on Windows, macOS and Linux.
 | XI · The Clockwork | `Ctrl-a Ctrl-x`, macros `qa … q @a @@` |
 | XII · The Terraces | `>> << >{motion}`, `gU gu g~`, replace mode `R` |
 | XIII · The Glacier | visual block `Ctrl-v` with `I A $A c`, `gn cgn` with `.`, `it at ip ap` |
-| XIV · The Archive | `:g :v`, ranges `:4,6m0 :$t0 :'<,'>`, `:norm`, `:sort`, a grand refactor, and the ending |
+| XIV · The Mainland | real files: renaming a variable in Rust (`*` `ciw` `n` `.`), fixing JSON, reordering a changelog, sorting imports (`:sort u`) |
+| XV · The Archive | `:g :v`, ranges `:4,6m0 :$t0 :'<,'>`, `:norm`, `:sort`, a grand refactor, and the ending |
 
 ### Everything vimtutor teaches
 
@@ -94,6 +115,14 @@ For development, `HJKL_LEVEL=12 cargo run` opens an isle directly.
 | `src/levels.rs` | The campaign: maps, crystals, goals, unlocked keys and each isle's golf solution |
 | `src/game.rs` | A level being played: key locking, crystals, completion, stars. Its tests replay every golf solution and check it clears the isle at exactly par. |
 | `src/audio.rs` | Sound effects and the ambient pad, synthesized into WAV at start-up |
+| `src/story.rs` | Pip's lines, the bosses and each chapter's sky, ground and weather |
+| `src/hints.rs` | What can follow a half-typed command |
+| `src/grammar.rs` | Operators and motions as verbs and nouns, and how a command splits into them |
+| `src/daily.rs` | The daily tide: a seeded puzzle generator |
+| `src/review.rs` | Review drills built from the isles' examples |
+| `src/worldmap.rs` | The world map and Pip's ferry |
+| `src/replay.rs` | A run played back beside the golf line |
+| `src/screens.rs` | The grammar grid, the boss banner and the hint card |
 | `web/splash.*` | The web loading screen (night sky, a wisp hopping on h j k l, download progress, a vim tip), put into the page `nsh package` writes by `web/splash.py` in CI |
 | `src/lib.rs` | The Native Shell UI: the 3/4-isometric board on canvases, animated values for the wisp, camera and sky, and the menus |
 

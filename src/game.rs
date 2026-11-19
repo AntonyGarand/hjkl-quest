@@ -595,21 +595,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    fn probe_bugs() {
-        let title = std::env::var("ISLE").unwrap();
-        let keys = std::env::var("KEYS").unwrap();
-        let i = LEVELS.iter().position(|l| l.title == title).unwrap();
-        let mut s = Session::new(i);
-        println!("start {:?} bugs {:?}", s.editor.cursor, s.bugs);
-        for k in parse_keys(&keys) {
-            let ev = s.press(k);
-            println!("{k} -> {ev:?} cursor {:?} bugs {:?} {}", s.editor.cursor, s.bugs.iter().map(|b| (b.at.row, b.at.col, b.dir)).collect::<Vec<_>>(), s.message);
-        }
-        println!("complete {} missed {:?} keys {}", s.complete, s.missed, s.keys.len());
-    }
-
-    #[test]
     fn star_thresholds() {
         assert_eq!(stars(10, 10), 3);
         assert_eq!(stars(15, 10), 2);

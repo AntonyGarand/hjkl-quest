@@ -24,18 +24,19 @@ pub(crate) fn hint_card(ui: Ui) -> impl IntoElement {
         })??;
         let rows = hint.next.into_iter().map(|(keys, what)| {
             view()
+                .w(px(266.0))
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .child(view().min_w(px(92.0)).child(text(keys).font_family(MONO).text_size(px(13.0)).font_weight(FontWeight::BOLD).text_color(hex(0xffd76b))))
-                .child(text(what).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.8)))
+                .child(view().w(px(80.0)).child(text(keys).font_family(MONO).text_size(px(13.0)).font_weight(FontWeight::BOLD).text_color(hex(0xffd76b))))
+                .child(text(what).text_size(px(12.0)).text_color(hexa(0xece6ff, 0.8)).flex_1())
         });
         Some(
             view()
                 .absolute()
                 .left(px(12.0))
                 .bottom(px(46.0))
-                .max_w(px(420.0))
+                .max_w(px(560.0))
                 .p(px(12.0))
                 .gap_1()
                 .rounded(px(12.0))
@@ -43,7 +44,7 @@ pub(crate) fn hint_card(ui: Ui) -> impl IntoElement {
                 .border_1()
                 .border_color(hexa(0xffb86b, 0.5))
                 .child(text(hint.title).font_family(MONO).text_size(px(13.0)).font_weight(FontWeight::BOLD).text_color(hex(0xffb86b)).mb(px(4.0)))
-                .children(rows)
+                .child(view().flex_row().flex_wrap().gap_1().children(rows))
                 .child(text("Esc cancels").text_size(px(11.0)).text_color(hexa(0xffffff, 0.4)).mt(px(4.0))),
         )
     })
