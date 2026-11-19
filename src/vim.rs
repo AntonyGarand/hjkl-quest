@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use crate::regex::{Match, Regex, expand};
+
 /// One keystroke given to the editor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Key {
@@ -165,6 +167,8 @@ struct ConfirmSub {
     /// (row, col, length) of each match, in order.
     matches: Vec<(usize, usize, usize)>,
     rep: String,
+    pat: String,
+    icase: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -270,6 +274,10 @@ pub struct Editor {
     pub buffer_name: String,
     /// The file `:e #` goes back to, and where the cursor was in each.
     alternate: Option<String>,
+    /// The last visual selection (its anchor, cursor and mode), for `gv`.
+    last_visual: Option<(Pos, Pos, Mode)>,
+    /// Ctrl-r was typed in insert mode: the next key names a register.
+    insert_reg: bool,
     cursors: HashMap<String, Pos>,
     pub ignorecase: bool,
     pub smartcase: bool,
@@ -345,6 +353,8 @@ impl Editor {
             files: std::collections::BTreeMap::new(),
             buffer_name: ISLE.to_string(),
             alternate: None,
+            last_visual: None,
+            insert_reg: false,
             cursors: HashMap::new(),
             ignorecase: false,
             smartcase: false,
@@ -570,6 +580,7 @@ impl Editor {
         if let Some(rec) = &mut self.recording {
             rec.push(key);
         }
+        let visual_before = self.in_visual().then_some((self.anchor, self.cursor, self.mode));
         let outcome = match self.mode {
             Mode::Insert => self.insert_key(key),
             Mode::Replace => self.replace_key(key),
@@ -577,6 +588,9 @@ impl Editor {
             Mode::Confirm => self.confirm_key(key),
             Mode::Normal | Mode::Visual { .. } | Mode::Block => self.normal_key(key),
         };
+        if visual_before.is_some() && !self.in_visual() {
+            self.last_visual = visual_before;
+        }
         // A change ends when we are back in normal mode with nothing pending.
         if self.mode == Mode::Normal && self.pending.is_empty()
             && let Some(rec) = self.recording.take()
@@ -602,8 +616,34 @@ impl Editor {
     }
 
     fn insert_key(&mut self, key: Key) -> Outcome {
+        if std::mem::take(&mut self.insert_reg) {
+            let Key::Char(name) = key else { return Outcome::Ok };
+            let Some(text) = self.register_text(name).filter(|t| !t.is_empty()) else {
+                return Outcome::Bell(format!("Register {name} is empty"));
+            };
+            let linewise = if name == '"' { self.register.linewise } else { self.registers.get(&name.to_ascii_lowercase()).is_some_and(|r| r.linewise) };
+            let text = if linewise { format!("{text}\n") } else { text };
+            for c in text.chars() {
+                if c == '\n' {
+                    let row = self.cursor.row;
+                    let rest: Vec<char> = self.lines[row].split_off(self.cursor.col);
+                    self.lines.insert(row + 1, rest);
+                    self.cursor = pos(row + 1, 0);
+                } else {
+                    self.lines[self.cursor.row].insert(self.cursor.col, c);
+                    self.cursor.col += 1;
+                }
+            }
+            self.changed();
+            return Outcome::Ok;
+        }
         match key {
+            Key::CtrlR => {
+                self.insert_reg = true;
+                return Outcome::Ok;
+            }
             Key::Esc => {
+                self.marks.insert('^', self.cursor);
                 if let Some(b) = self.block_insert.take()
                     && self.cursor.row == b.row && self.cursor.col >= b.start {
                         let typed: Vec<char> = self.lines[b.row][b.start..self.cursor.col].to_vec();
@@ -762,7 +802,7 @@ impl Editor {
                         None => Outcome::Bell("Pattern not found".into()),
                     }
                 } else {
-                    self.ex_command(&line)
+                    self.ex_line(&line)
                 }
             }
         }
@@ -851,6 +891,37 @@ impl Editor {
                 }
             }
         }
+    }
+
+    /// A command line: commands joined by `|` run one after the other
+    /// (`:g` and `:normal` take the rest of the line, `|` and all).
+    fn ex_line(&mut self, line: &str) -> Outcome {
+        let mut parts: Vec<String> = vec![String::new()];
+        let mut chars = line.chars().peekable();
+        while let Some(c) = chars.next() {
+            let current = parts.last_mut().unwrap();
+            let name: String = current.trim_start().trim_start_matches(|c: char| !c.is_ascii_alphabetic()).chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+            let takes_rest = matches!(name.as_str(), "g" | "global" | "v" | "vglobal" | "norm" | "normal");
+            if c == '\\' && chars.peek() == Some(&'|') {
+                current.push('\\');
+                current.push(chars.next().unwrap());
+            } else if c == '|' && !takes_rest {
+                parts.push(String::new());
+            } else {
+                current.push(c);
+            }
+        }
+        if parts.len() == 1 {
+            return self.ex_command(line);
+        }
+        let mut last = Outcome::Ok;
+        for part in parts.iter().filter(|p| !p.trim().is_empty()) {
+            last = self.ex_command(part);
+            if matches!(last, Outcome::Bell(_) | Outcome::Command(_)) {
+                break;
+            }
+        }
+        last
     }
 
     fn ex_command(&mut self, line: &str) -> Outcome {
@@ -1021,7 +1092,7 @@ impl Editor {
                         let n: String = sub.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
                         matches!(n.as_str(), "d" | "de" | "del" | "delete" | "m" | "mo" | "move" | "t" | "co" | "copy")
                     };
-                    if let Outcome::Bell(msg) = self.ex_command(&sub)
+                    if let Outcome::Bell(msg) = self.ex_line(&sub)
                         && !msg.starts_with("Pattern not found") {
                             break;
                         }
@@ -1200,9 +1271,10 @@ impl Editor {
         let before = self.lines.clone();
         let cursor = self.cursor;
         let mut last = None;
+        let (re, icase) = (Regex::new(pat), self.icase(pat));
         for row in a..=b.min(self.lines.len() - 1) {
             let line = self.lines[row].clone();
-            let mut hits = find_all(pat, &line, self.icase(pat));
+            let mut hits = find_matches(&re, &line, icase);
             if hits.is_empty() {
                 continue;
             }
@@ -1211,21 +1283,10 @@ impl Editor {
             }
             let mut out = Vec::new();
             let mut at = 0;
-            for (s, len) in hits {
-                out.extend_from_slice(&line[at..s]);
-                let mut chars = rep.chars().peekable();
-                while let Some(c) = chars.next() {
-                    match c {
-                        '&' => out.extend_from_slice(&line[s..s + len]),
-                        '\\' => match chars.next() {
-                            Some('n') | Some('r') => out.push('\n'),
-                            Some(other) => out.push(other),
-                            None => out.push('\\'),
-                        },
-                        c => out.push(c),
-                    }
-                }
-                at = s + len;
+            for m in hits {
+                out.extend_from_slice(&line[at..m.start]);
+                out.extend(expand(rep, &line, &m));
+                at = m.end;
             }
             out.extend_from_slice(&line[at..]);
             self.lines[row] = out;
@@ -1416,6 +1477,23 @@ impl Editor {
                         }
                         return Ok(Some((m(p, MotionKind::Inclusive), i + 2)));
                     }
+                    Key::Char('_') => {
+                        let row = (cur.row + n - 1).min(self.lines.len() - 1);
+                        let line = &self.lines[row];
+                        let col = line.iter().rposition(|c| !c.is_whitespace()).unwrap_or(0);
+                        return Ok(Some((m(pos(row, col), MotionKind::Inclusive), i + 2)));
+                    }
+                    // g* and g#: the word under the cursor, also inside longer words.
+                    Key::Char(s @ ('*' | '#')) => {
+                        let word = self.word_under(cur).ok_or(Parse::Invalid)?;
+                        self.last_search = Some(word.chars().flat_map(|c| if "\\.*[~^$/".contains(c) { vec!['\\', c] } else { vec![c] }).collect());
+                        self.search_back = s == '#';
+                        let mut p = cur;
+                        for _ in 0..n {
+                            p = self.search_from(p, s == '*', false).ok_or(Parse::Invalid)?;
+                        }
+                        return Ok(Some((jm(p, MotionKind::Exclusive), i + 2)));
+                    }
                     _ => return Err(Parse::Invalid),
                 }
             }
@@ -1443,7 +1521,52 @@ impl Editor {
                 let mk = if kind == 'f' || kind == 't' { MotionKind::Inclusive } else { MotionKind::Exclusive };
                 m(to, mk)
             }
+            // {n}%: that far through the file, in percent.
+            '%' if count.is_some() => {
+                let n = n.min(100);
+                let row = ((n * self.lines.len()).div_ceil(100)).max(1) - 1;
+                Motion { to: pos(row, self.first_non_blank(row)), kind: MotionKind::Linewise, keeps_want: true, want_end: false, jump: true }
+            }
             '%' => jm(self.match_pair(cur).ok_or(Parse::Invalid)?, MotionKind::Inclusive),
+            '|' => m(pos(cur.row, (n - 1).min(self.last_col(cur.row))), MotionKind::Exclusive),
+            '_' | '+' | '-' => {
+                let row = match c {
+                    '_' => cur.row + n - 1,
+                    '+' => cur.row + n,
+                    _ => cur.row.checked_sub(n).ok_or(Parse::Invalid)?,
+                };
+                if row >= self.lines.len() {
+                    return Err(Parse::Invalid);
+                }
+                Motion { to: pos(row, self.first_non_blank(row)), kind: MotionKind::Linewise, keeps_want: true, want_end: false, jump: false }
+            }
+            'H' | 'M' | 'L' => {
+                let last = self.lines.len() - 1;
+                let row = match c {
+                    'H' => (n - 1).min(last),
+                    'L' => last.saturating_sub(n - 1),
+                    _ => last / 2,
+                };
+                Motion { to: pos(row, self.first_non_blank(row)), kind: MotionKind::Linewise, keeps_want: true, want_end: false, jump: true }
+            }
+            '(' | ')' => {
+                let starts = self.sentence_starts();
+                let mut p = cur;
+                for _ in 0..n {
+                    p = if c == ')' {
+                        match starts.iter().find(|&&s| s > p) {
+                            Some(&s) => s,
+                            None => {
+                                let row = self.lines.len() - 1;
+                                pos(row, self.last_col(row))
+                            }
+                        }
+                    } else {
+                        starts.iter().rev().find(|&&s| s < p).copied().unwrap_or(pos(0, 0))
+                    };
+                }
+                jm(p, MotionKind::Exclusive)
+            }
             '`' | '\'' => {
                 let Some(&next) = keys.get(i + 1) else { return Err(Parse::Incomplete) };
                 let Key::Char(name) = next else { return Err(Parse::Invalid) };
@@ -1549,6 +1672,12 @@ impl Editor {
                     self.anchor = s;
                     self.cursor = if e > s { self.before(e) } else { s };
                     return Ok(Outcome::Ok);
+                }
+                Some(&Key::Char(g @ ('J' | 'i' | 'v' | 'p' | 'P'))) => {
+                    if keys.len() > i + 2 {
+                        return Err(Parse::Invalid);
+                    }
+                    return Ok(self.g_command(g, n));
                 }
                 Some(&Key::Char('&')) => {
                     if keys.len() > i + 2 {
@@ -1809,6 +1938,72 @@ impl Editor {
                 Ok(Outcome::Ok)
             }
             _ => Err(Parse::Invalid),
+        }
+    }
+
+    /// `gJ` (join, no spaces), `gi` (insert where the last insert
+    /// stopped), `gv` (the last selection again), `gp` and `gP` (put, and
+    /// end up just after it).
+    fn g_command(&mut self, g: char, n: usize) -> Outcome {
+        match g {
+            'J' => {
+                if self.cursor.row + 1 >= self.lines.len() {
+                    return Outcome::Bell("Nothing below to join".into());
+                }
+                self.snapshot();
+                for _ in 0..n.saturating_sub(1).max(1) {
+                    let row = self.cursor.row;
+                    if row + 1 >= self.lines.len() {
+                        break;
+                    }
+                    let next = self.lines.remove(row + 1);
+                    self.cursor.col = self.lines[row].len();
+                    self.lines[row].extend(next);
+                }
+                self.changed();
+                self.clamp();
+                Outcome::Ok
+            }
+            'i' => {
+                self.snapshot();
+                let at = self.marks.get(&'^').copied().unwrap_or(self.cursor);
+                let row = at.row.min(self.lines.len() - 1);
+                self.cursor = pos(row, at.col.min(self.line_len(row)));
+                self.mode = Mode::Insert;
+                Outcome::Ok
+            }
+            'v' => {
+                let Some((anchor, cursor, mode)) = self.last_visual else {
+                    return Outcome::Bell("No previous selection".into());
+                };
+                self.recording = None;
+                let fit = |e: &Self, p: Pos| {
+                    let row = p.row.min(e.lines.len() - 1);
+                    pos(row, p.col.min(e.last_col(row)))
+                };
+                self.anchor = fit(self, anchor);
+                self.cursor = fit(self, cursor);
+                self.mode = mode;
+                Outcome::Ok
+            }
+            _ => {
+                let reg = self.read_reg();
+                if reg.text.is_empty() && !reg.linewise {
+                    return Outcome::Bell("Nothing in that register yet".into());
+                }
+                self.snapshot();
+                let rows = self.lines.len();
+                self.put(g == 'p', n);
+                if reg.linewise {
+                    let row = self.cursor.row + (self.lines.len() - rows);
+                    self.cursor = pos(row.min(self.lines.len() - 1), 0);
+                } else {
+                    self.cursor.col += 1;
+                }
+                self.changed();
+                self.want = self.cursor.col;
+                Outcome::Ok
+            }
         }
     }
 
@@ -2619,9 +2814,14 @@ impl Editor {
     fn all_hits(&self, pat: &str, whole_word: bool) -> Vec<(Pos, usize)> {
         let mut hits = Vec::new();
         let icase = self.icase(pat);
+        let re = Regex::new(pat);
         for (row, line) in self.lines.iter().enumerate() {
-            for col in 0..=line.len() {
-                if let Some(len) = match_at(pat, line, col, icase) {
+            for from in 0..=line.len() {
+                if let Some(m) = re.match_here(line, from, icase) {
+                    let (col, len) = (m.start, m.end - m.start);
+                    if hits.last().is_some_and(|&(p, _): &(Pos, usize)| p == pos(row, col)) {
+                        continue;
+                    }
                     if whole_word {
                         let before = col > 0 && class(line[col - 1], false) == 2;
                         let after = col + len < line.len() && class(line[col + len], false) == 2;
@@ -2661,6 +2861,74 @@ impl Editor {
         } else {
             hits.iter().rev().find(|&&h| h < from).or(hits.last()).copied()
         }
+    }
+
+    /// Where each sentence starts: after `.`, `!` or `?` (and any closing
+    /// `)]"'`) and a space or line end, an empty line, and the first
+    /// character after an empty line.
+    fn sentence_starts(&self) -> Vec<Pos> {
+        let mut starts = Vec::new();
+        let mut need = true;
+        for (row, line) in self.lines.iter().enumerate() {
+            if line.is_empty() {
+                starts.push(pos(row, 0));
+                need = true;
+                continue;
+            }
+            for (col, &c) in line.iter().enumerate() {
+                if need && !c.is_whitespace() {
+                    starts.push(pos(row, col));
+                    need = false;
+                }
+                if matches!(c, '.' | '!' | '?') {
+                    let mut k = col + 1;
+                    while k < line.len() && matches!(line[k], ')' | ']' | '"' | '\'') {
+                        k += 1;
+                    }
+                    if k == line.len() || line[k].is_whitespace() {
+                        need = true;
+                    }
+                }
+            }
+        }
+        starts
+    }
+
+    /// The sentence object: `is` the sentence, `as` with the spaces after
+    /// it (or, at a line's end, before it). It ends on its own line.
+    fn sentence_object(&self, inner: bool) -> Option<(Pos, Pos)> {
+        let cur = self.cursor;
+        if self.lines[cur.row].is_empty() {
+            return None;
+        }
+        let starts = self.sentence_starts();
+        let s = starts.iter().rev().find(|&&s| s <= cur).copied().unwrap_or(pos(0, 0));
+        let next = starts.iter().find(|&&p| p > cur).copied();
+        let mut end = match next {
+            Some(n) if n.row == cur.row => n,
+            _ => pos(cur.row, self.line_len(cur.row)),
+        };
+        let line = &self.lines[end.row];
+        let floor = if s.row == end.row { s.col + 1 } else { 0 };
+        while end.col > floor && line[end.col - 1].is_whitespace() {
+            end.col -= 1;
+        }
+        if inner {
+            return Some((s, end));
+        }
+        let mut e = end.col;
+        while e < line.len() && line[e].is_whitespace() {
+            e += 1;
+        }
+        if e > end.col {
+            return Some((s, pos(end.row, e)));
+        }
+        let first = &self.lines[s.row];
+        let mut b = s.col;
+        while b > 0 && first[b - 1].is_whitespace() {
+            b -= 1;
+        }
+        Some((pos(s.row, b), end))
     }
 
     fn match_pair(&self, at: Pos) -> Option<Pos> {
@@ -2711,6 +2979,7 @@ impl Editor {
         match obj {
             'p' => self.paragraph_object(inner).map(|(a, b)| Span::Lines(a, b)),
             't' => self.tag_object(inner).map(|(s, e)| Span::Chars(s, e)),
+            's' => self.sentence_object(inner).map(|(s, e)| Span::Chars(s, e)),
             _ => self.text_object(inner, obj).map(|(s, e)| Span::Chars(s, e)),
         }
     }
@@ -3130,7 +3399,7 @@ impl Editor {
         }
         let Some(&(row, col, _)) = matches.first() else { return Outcome::Bell(format!("Pattern not found: {pat}")) };
         self.snapshot_force();
-        self.confirm = Some(ConfirmSub { matches, rep: rep.to_string() });
+        self.confirm = Some(ConfirmSub { matches, rep: rep.to_string(), pat: pat.to_string(), icase });
         self.mode = Mode::Confirm;
         self.cursor = pos(row, col);
         Outcome::Info(self.confirm_prompt())
@@ -3156,16 +3425,13 @@ impl Editor {
         };
         let replace_one = |e: &mut Editor, c: &mut ConfirmSub| {
             let (row, col, len) = c.matches.remove(0);
-            let matched: Vec<char> = e.lines[row][col..col + len].to_vec();
-            let mut new = Vec::new();
-            let mut chars = c.rep.chars();
-            while let Some(ch) = chars.next() {
-                match ch {
-                    '&' => new.extend_from_slice(&matched),
-                    '\\' => new.push(chars.next().unwrap_or('\\')),
-                    ch => new.push(ch),
-                }
-            }
+            let line = e.lines[row].clone();
+            let mut m = Regex::new(&c.pat)
+                .match_here(&line, col, c.icase)
+                .filter(|m| m.start == col && m.end == col + len)
+                .unwrap_or(Match { start: col, end: col + len, groups: [None; 10] });
+            m.groups[0] = Some((col, col + len));
+            let new = expand(&c.rep, &line, &m);
             let delta = new.len() as i64 - len as i64;
             e.lines[row].splice(col..col + len, new);
             for m in c.matches.iter_mut().filter(|m| m.0 == row && m.1 > col) {
@@ -3211,71 +3477,29 @@ fn mul_counts(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     }
 }
 
-/// Whether `pat` matches `line` at `col`, and how long the match is. A
-/// pattern is literal text, anchored by a leading `^` or a trailing `$`.
+/// Whether `pat` matches `line` at `col`, and how long the match is (a
+/// vim pattern: see `regex`).
 pub fn match_at(pat: &str, line: &[char], col: usize, icase: bool) -> Option<usize> {
-    // `\c` and `\C` only set the case (the caller read them).
-    let pat: &str = &pat.replace(r"\c", "").replace(r"\C", "");
-    let (start, body) = match pat.strip_prefix('^') {
-        Some(b) => (true, b),
-        None => (false, pat),
-    };
-    let (end, body) = match body.strip_suffix('$') {
-        Some(b) if !b.ends_with('\\') => (true, b),
-        _ => (false, body),
-    };
-    // `\<` and `\>`: the match starts, or ends, a word (as `*` searches).
-    let (word_start, body) = match body.strip_prefix(r"\<") {
-        Some(b) => (true, b),
-        None => (false, body),
-    };
-    let (word_end, body) = match body.strip_suffix(r"\>") {
-        Some(b) => (true, b),
-        None => (false, body),
-    };
-    if start && col != 0 {
-        return None;
-    }
-    let is_word = |c: char| class(c, false) == 2;
-    if word_start && col > 0 && line.get(col - 1).is_some_and(|c| is_word(*c)) {
-        return None;
-    }
-    let mut want: Vec<char> = Vec::new();
-    let mut chars = body.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            want.push(chars.next().unwrap_or('\\'));
-        } else {
-            want.push(c);
-        }
-    }
-    if col + want.len() > line.len() {
-        return None;
-    }
-    let same = |a: char, b: char| a == b || icase && a.to_lowercase().eq(b.to_lowercase());
-    if !line[col..col + want.len()].iter().zip(&want).all(|(a, b)| same(*a, *b)) {
-        return None;
-    }
-    if end && col + want.len() != line.len() {
-        return None;
-    }
-    if word_end && line.get(col + want.len()).is_some_and(|c| is_word(*c)) {
-        return None;
-    }
-    Some(want.len())
+    Regex::new(pat).match_here(line, col, icase).filter(|m| m.start == col).map(|m| m.end - m.start)
 }
 
-/// The non-overlapping matches of `pat` in `line`, as `:s` and `:g` see them.
+/// The non-overlapping matches of `pat` in `line`, as `:s` and `:g` see
+/// them: where each starts, and how long it is.
 pub fn find_all(pat: &str, line: &[char], icase: bool) -> Vec<(usize, usize)> {
-    let mut out = Vec::new();
+    find_matches(&Regex::new(pat), line, icase).into_iter().map(|m| (m.start, m.end - m.start)).collect()
+}
+
+/// The non-overlapping matches of `re` in `line`, with their groups.
+pub fn find_matches(re: &Regex, line: &[char], icase: bool) -> Vec<Match> {
+    let mut out: Vec<Match> = Vec::new();
     let mut col = 0;
     while col <= line.len() {
-        match match_at(pat, line, col, icase) {
-            Some(len) => {
-                out.push((col, len));
-                col += len.max(1);
+        match re.match_here(line, col, icase) {
+            Some(m) if out.last().is_none_or(|l| m.start >= l.end && (m.start > l.start || m.end > l.end)) => {
+                col = if m.end > col { m.end } else { col + 1 };
+                out.push(m);
             }
-            None => col += 1,
+            _ => col += 1,
         }
     }
     out
@@ -3748,5 +3972,66 @@ mod tests {
         e.feed(Key::Char('d'));
         e.feed(Key::Char('t'));
         assert!(e.awaiting_char());
+    }
+
+    #[test]
+    fn columns_lines_and_screen() {
+        assert_eq!(run("abcdef", pos(0, 0), "4|").cursor, pos(0, 3));
+        assert_eq!(run("abcdef", pos(0, 4), "|").cursor, pos(0, 0));
+        assert_eq!(run("a\n  b\n  c", pos(0, 0), "+").cursor, pos(1, 2));
+        assert_eq!(run("  a\n  b", pos(1, 3), "-").cursor, pos(0, 2));
+        assert_eq!(run("a\n  b\nc", pos(0, 0), "2_").cursor, pos(1, 2));
+        assert_eq!(run("a b  ", pos(0, 0), "g_").cursor, pos(0, 2));
+        assert_eq!(run("1\n2\n3\n4\n5", pos(2, 0), "H").cursor, pos(0, 0));
+        assert_eq!(run("1\n2\n3\n4\n5", pos(0, 0), "L").cursor, pos(4, 0));
+        assert_eq!(run("1\n2\n3\n4\n5", pos(0, 0), "M").cursor, pos(2, 0));
+        assert_eq!(run("1\n2\n3\n4\n5\n6\n7\n8\n9\n10", pos(0, 0), "50%").cursor, pos(4, 0));
+        assert_eq!(run("a\nb\nc", pos(0, 0), "dL").text(), "");
+    }
+
+    #[test]
+    fn sentences() {
+        let text = "One two. Three four! Five.";
+        assert_eq!(run(text, pos(0, 0), ")").cursor, pos(0, 9));
+        assert_eq!(run(text, pos(0, 0), "2)").cursor, pos(0, 21));
+        assert_eq!(run(text, pos(0, 12), "(").cursor, pos(0, 9));
+        assert_eq!(run(text, pos(0, 12), "dis").text(), "One two.  Five.");
+        assert_eq!(run(text, pos(0, 12), "das").text(), "One two. Five.");
+        assert_eq!(run(text, pos(0, 22), "das").text(), "One two. Three four!");
+    }
+
+    #[test]
+    fn g_commands() {
+        assert_eq!(run("ab\n  cd", pos(0, 0), "gJ").text(), "ab  cd");
+        let e = run("hello", pos(0, 0), "Aworld<Esc>0gi!<Esc>");
+        assert_eq!(e.text(), "helloworld!");
+        let e = run("one two", pos(0, 0), "vey0gvd");
+        assert_eq!(e.text(), " two");
+        let e = run("ab", pos(0, 0), "ylgpix<Esc>");
+        assert_eq!(e.text(), "aaxb");
+        let e = run("a\nb", pos(0, 0), "yygpix<Esc>");
+        assert_eq!(e.text(), "a\na\nxb");
+        let e = run("foobar foo", pos(0, 7), "g*");
+        assert_eq!(e.cursor, pos(0, 0));
+    }
+
+    #[test]
+    fn insert_ctrl_r_puts_a_register() {
+        let e = run("cat", pos(0, 0), "yiwA <C-r>\"<Esc>");
+        assert_eq!(e.text(), "cat cat");
+        let e = run("x", pos(0, 0), "\"ayiwo<C-r>a!<Esc>");
+        assert_eq!(e.text(), "x\nx!");
+    }
+
+    #[test]
+    fn regex_substitution_and_bars() {
+        assert_eq!(run("hello world", pos(0, 0), r":s/\(\w\+\) \(\w\+\)/\2 \1/<CR>").text(), "world hello");
+        assert_eq!(run("a1 b22 c333", pos(0, 0), r":s/\d\+/#/g<CR>").text(), "a# b# c#");
+        assert_eq!(run("cat dog", pos(0, 0), r":s/cat\|dog/pet/g<CR>").text(), "pet pet");
+        assert_eq!(run("a b", pos(0, 0), ":s/a/x/ | s/b/y/<CR>").text(), "x y");
+        assert_eq!(run("ab\nab", pos(0, 0), ":%s/a/1/ | %s/b/2/<CR>").text(), "12\n12");
+        assert_eq!(run("one\ntwo", pos(0, 0), ":g/o/s/o/0/g | s/0/O/<CR>").text(), "One\ntwO");
+        assert_eq!(run("x.y xzy", pos(0, 0), r"/x\.y<CR>:s//Q/<CR>").text(), "Q xzy");
+        assert_eq!(run("aa bb", pos(0, 0), r":s/\v(\w)\1/<\1>/g<CR>").text(), "<a> <b>");
     }
 }

@@ -17,6 +17,7 @@ pub mod hints;
 pub mod lessons;
 pub mod levels;
 mod replay;
+pub mod regex;
 pub mod review;
 mod screens;
 pub mod story;
