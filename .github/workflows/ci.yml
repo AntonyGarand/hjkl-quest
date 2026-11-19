@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  NSH_VERSION: v0.5.1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Engine and level tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: GTK 4 (the Linux backend's build dependency)
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --lib
+
+  web:
+    name: Web build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install nsh
+        run: |
+          curl -fsSL https://nsh.dev/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Package for the web
+        run: nsh package --target web --out dist
+      - name: GitHub Pages fallback page
+        run: |
+          site=$(dirname "$(find dist -name index.html | head -1)")
+          cp "$site/index.html" "$site/404.html"
+          touch "$site/.nojekyll"
+          echo "SITE_DIR=$site" >> "$GITHUB_ENV"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ env.SITE_DIR }}
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [test, web]
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  desktop:
+    name: Desktop (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows
+          - os: macos-latest
+            target: macos
+          - os: ubuntu-24.04
+            target: linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: GTK 4
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev
+      - name: Install nsh (macOS, Linux)
+        if: matrix.target != 'windows'
+        run: |
+          curl -fsSL https://nsh.dev/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install nsh (Windows)
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          irm https://nsh.dev/install.ps1 | iex
+          "$env:LOCALAPPDATA\nsh\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - name: Package
+        run: nsh package --target ${{ matrix.target }} --out out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hjkl-quest-${{ matrix.target }}
+          path: out

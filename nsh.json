@@ -1,0 +1,15 @@
+{
+  "name": "HJKL Quest",
+  "id": "dev.garand.hjklquest",
+  "version": "0.1.0",
+  "build": 1,
+  "rust": ".",
+  "root": "App",
+  "icon": "assets/icon.png",
+  "appearance": "dark",
+  "window": {
+    "title": "HJKL Quest",
+    "defaultSize": { "width": 1280, "height": 800 },
+    "minSize": { "width": 900, "height": 600 }
+  }
+}
