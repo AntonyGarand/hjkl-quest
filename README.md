@@ -94,6 +94,7 @@ For development, `HJKL_LEVEL=12 cargo run` opens an isle directly.
 | `src/levels.rs` | The campaign: maps, crystals, goals, unlocked keys and each isle's golf solution |
 | `src/game.rs` | A level being played: key locking, crystals, completion, stars. Its tests replay every golf solution and check it clears the isle at exactly par. |
 | `src/audio.rs` | Sound effects and the ambient pad, synthesized into WAV at start-up |
+| `web/splash.*` | The web loading screen (night sky, a wisp hopping on h j k l, download progress, a vim tip), put into the page `nsh package` writes by `web/splash.py` in CI |
 | `src/lib.rs` | The Native Shell UI: the 3/4-isometric board on canvases, animated values for the wisp, camera and sky, and the menus |
 
 CI (`.github/workflows/ci.yml`) runs the tests, deploys the web build to GitHub Pages and packages the desktop apps

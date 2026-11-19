@@ -1,0 +1,59 @@
+  /* HJKL Quest's loading screen (web/splash.py puts it in the page). */
+  html, body { background: #0a0f24; }
+  #status { pointer-events: none; color: #ece6ff; gap: 0;
+    background: radial-gradient(ellipse at 78% 18%, rgba(255, 243, 176, .10), transparent 26%),
+      linear-gradient(180deg, #0a0f24 0%, #221a46 62%, #40285c 100%); }
+  /* Fade out when the game is up, instead of vanishing. */
+  #status[hidden] { display: flex; opacity: 0; visibility: hidden;
+    transition: opacity .45s ease, visibility 0s .45s; }
+  #status.failed { background: #0a0f24; }
+  .hq { display: flex; flex-direction: column; align-items: center; gap: 22px;
+    animation: hq-appear .35s .12s both; }
+  @keyframes hq-appear { from { opacity: 0; transform: translateY(6px); } }
+  .hq-stars, .hq-stars::after { position: fixed; inset: 0; pointer-events: none;
+    background-image:
+      radial-gradient(1.5px 1.5px at 12% 22%, #fff 50%, transparent 51%),
+      radial-gradient(1px 1px at 27% 64%, #fff 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 41% 14%, #fff 50%, transparent 51%),
+      radial-gradient(1px 1px at 58% 38%, #fff 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 69% 72%, #fff 50%, transparent 51%),
+      radial-gradient(1px 1px at 84% 30%, #fff 50%, transparent 51%),
+      radial-gradient(1px 1px at 91% 58%, #fff 50%, transparent 51%),
+      radial-gradient(1.5px 1.5px at 6% 80%, #fff 50%, transparent 51%);
+    opacity: .7; animation: hq-twinkle 2.6s ease-in-out infinite alternate; }
+  .hq-stars::after { content: ""; transform: translate(13vw, 9vh); animation-delay: -1.3s; }
+  @keyframes hq-twinkle { to { opacity: .25; } }
+  .hq-moon { position: fixed; top: 9vh; right: 14vw; width: 46px; height: 46px; border-radius: 50%;
+    box-shadow: inset -12px -4px 0 0 #fff3d6; transform: rotate(-20deg);
+    filter: drop-shadow(0 0 24px rgba(255, 243, 176, .35)); }
+  .hq-title { margin: 0; font: 900 clamp(30px, 6vw, 46px)/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+    letter-spacing: .14em; color: #fff3b0; text-shadow: 0 0 28px rgba(255, 243, 176, .25); }
+  /* Four isometric tiles, h j k l, and the wisp hopping along them. */
+  .hq-isle { position: relative; display: flex; padding-top: 34px; transform: skewX(-18deg); }
+  .hq-tile { position: relative; width: 44px; height: 32px; margin-right: 2px; background: #5f6f93;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 14px 0 #3b455d;
+    display: flex; align-items: center; justify-content: center; }
+  .hq-tile span { transform: skewX(18deg); font: 700 19px ui-monospace, Menlo, Consolas, monospace; color: #f6f1e3; }
+  .hq-tile:nth-child(2) { background: #4c8f57; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 14px 0 #2f5a37; }
+  .hq-wisp { position: absolute; top: 4px; left: 8px; width: 14px; height: 14px; border-radius: 50%;
+    transform: skewX(18deg);
+    background: #fffdf5; box-shadow: 0 0 14px 6px rgba(255, 243, 176, .55);
+    animation: hq-walk 2.8s cubic-bezier(.45, 0, .55, 1) infinite, hq-hop .7s ease-in-out infinite; }
+  @keyframes hq-walk {
+    0%, 12% { left: 22px; } 25%, 37% { left: 68px; } 50%, 62% { left: 114px; } 75%, 87% { left: 160px; } 100% { left: 22px; } }
+  @keyframes hq-hop { 0%, 100% { top: 10px; } 50% { top: -6px; } }
+  .hq-bar { margin-top: 10px; width: min(280px, 70vw); height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .12); overflow: hidden; }
+  .hq-fill { height: 100%; width: 4%; border-radius: 3px; background: linear-gradient(90deg, #ffd76b, #fff3b0);
+    box-shadow: 0 0 12px rgba(255, 215, 107, .6); transition: width .25s ease; }
+  /* While the game compiles the size is known no more: a sweep. */
+  .hq-bar.hq-busy .hq-fill { width: 35%; animation: hq-sweep 1.1s ease-in-out infinite; }
+  @keyframes hq-sweep { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
+  .hq-step { margin-top: -10px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; color: rgba(236, 230, 255, .7); }
+  .hq-tip { max-width: min(460px, 86vw); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: rgba(236, 230, 255, .62); }
+  .hq-tip kbd { padding: 1px 6px; border-radius: 5px; border: 1px solid rgba(255, 243, 176, .35);
+    background: rgba(255, 243, 176, .08); color: #fff3b0; font: 600 13px ui-monospace, Menlo, Consolas, monospace; }
+  @media (prefers-reduced-motion: reduce) {
+    .hq-stars, .hq-stars::after, .hq-wisp, .hq-bar.hq-busy .hq-fill { animation: none; }
+    .hq-wisp { left: 22px; top: 8px; }
+  }

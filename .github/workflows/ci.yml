@@ -39,9 +39,10 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Package for the web
         run: nsh package --target web --out dist
-      - name: GitHub Pages fallback page
+      - name: Loading screen and GitHub Pages fallback page
         run: |
           site=$(dirname "$(find dist -name index.html | head -1)")
+          python3 web/splash.py "$site"
           cp "$site/index.html" "$site/404.html"
           touch "$site/.nojekyll"
           echo "SITE_DIR=$site" >> "$GITHUB_ENV"
