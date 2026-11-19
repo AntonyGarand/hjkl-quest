@@ -1554,6 +1554,35 @@ fn side_panel(index: usize) -> impl IntoElement {
         )
 }
 
+/// The golf solution, hidden until the pointer is over it (or it is
+/// pressed, on touch screens), so it doesn't spoil a retry.
+fn spoiler(solution: String) -> impl IntoElement {
+    let shown = signal(false);
+    let masked: String = solution.chars().map(|_| '•').collect();
+    view()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .px(px(8.0))
+        .py(px(4.0))
+        .ml(px(-8.0))
+        .rounded(px(6.0))
+        .bg(move || if shown.get() { hexa(GEM, 0.08) } else { hexa(0xffffff, 0.05) })
+        .cursor_pointer()
+        .on_mouse_enter(move |_: &MouseEvent| shown.set(true))
+        .on_mouse_leave(move |_: &MouseEvent| shown.set(false))
+        .on_press(move || shown.update(|s| *s = !*s))
+        .child(
+            text(move || if shown.get() { solution.clone() } else { masked.clone() })
+                .font_family(MONO)
+                .text_size(px(14.0))
+                .text_color(move || if shown.get() { hex(GEM) } else { hexa(GEM, 0.35) }),
+        )
+        .child(dynamic(move || {
+            (!shown.get()).then(|| text("hover to reveal").text_size(px(11.0)).italic().text_color(hexa(0xffffff, 0.4)))
+        }))
+}
+
 fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
     let scale = motion.card.interpolate(&[0.0, 1.0], &[0.85, 1.0]);
     dynamic(move || {
@@ -1609,7 +1638,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .child(text(format!("YOUR KEYS · {count}")).text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)))
                                 .child(text(keys).font_family(MONO).text_size(px(14.0)).text_color(hex(0xece6ff)))
                                 .child(text(format!("GOLF SOLUTION · {par}")).text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)).mt(px(8.0)))
-                                .child(text(format_keys(&vim::parse_keys(level.solution))).font_family(MONO).text_size(px(14.0)).text_color(hex(GEM))),
+                                .child(spoiler(format_keys(&vim::parse_keys(level.solution)))),
                         )
                         .child(
                             view()
