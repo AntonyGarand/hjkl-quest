@@ -14,7 +14,8 @@ pub struct Level {
     pub unlock: &'static str,
     /// The buffer: the island the player walks on.
     pub map: &'static str,
-    /// An overlay of `map`: `@` the start, `*` a crystal to collect.
+    /// An overlay of `map`: `@` the start, `*` a crystal to collect, `^` a
+    /// trap the cursor must jump over, never land on.
     pub marks: &'static str,
     /// For editing levels, the text the buffer must become.
     pub goal: Option<&'static str>,
@@ -30,6 +31,10 @@ impl Level {
 
     pub fn gems(&self) -> Vec<Pos> {
         self.marked('*')
+    }
+
+    pub fn traps(&self) -> Vec<Pos> {
+        self.marked('^')
     }
 
     fn marked(&self, mark: char) -> Vec<Pos> {
@@ -89,9 +94,13 @@ pub static LEVELS: &[Level] = &[
     Level {
         chapter: "I · The Meadow",
         title: "Counting Sheep",
-        story: "The meadow stretches far. Stepping one tile at a time is slow. \
-                Say how many steps you want first.",
-        teaches: &[("{n}l", "a count repeats a motion: 5l moves five right"), ("3j", "three lines down")],
+        story: "The meadow stretches far, and someone hid traps in the grass. Stepping \
+                one tile at a time is slow, and lands on them. Say how many steps you want first.",
+        teaches: &[
+            ("{n}l", "a count repeats a motion: 5l moves five right"),
+            ("3j", "three lines down"),
+            ("traps", "spikes ▲: never land on one. A count jumps clean over"),
+        ],
         unlock: "123456789",
         map: "
 ....................
@@ -101,12 +110,12 @@ pub static LEVELS: &[Level] = &[
 ....................
 ....................",
         marks: "
-@..............*....
+@...^...^...^..*....
 ....................
+...............^....
+...............^....
 ....................
-....................
-....................
-..*............*....",
+..*...^...^....*....",
         goal: None,
         solution: "15l5j13h",
         tip: "Counts work with almost every command in vim.",
@@ -124,7 +133,7 @@ pub static LEVELS: &[Level] = &[
         map: "
 the quick brown fox jumps over the lazy dog",
         marks: "
-          *         @     *           *",
+          *  ^      @ ^ ^ * ^       ^ *",
         goal: None,
         solution: "w3e6b",
         tip: "Words are runs of letters, digits and _, or runs of punctuation.",
@@ -163,9 +172,9 @@ a.b.c d.e.f g.h.i j.k.l",
   stand right here
         far   east  end",
         marks: "
-    @             *
-  *
-*                     *",
+    @   ^   ^     *
+  *     ^    ^
+*        ^     ^      *",
         goal: None,
         solution: "$j^j0$",
         tip: "After $, moving with j or k stays at the end of each line.",
@@ -196,15 +205,15 @@ floor two
 cellar",
         marks: "
 *
-
+^
 
 @
 
-
+^
 
 *
 
-
+^
 
 *",
         goal: None,
@@ -227,7 +236,7 @@ cellar",
         map: "
 go fetch the ball, bring it back, good dog!",
         marks: "
-@                * *        *   *   *     *",
+@     ^     ^    * *   ^    *   *   *  ^  *",
         goal: None,
         solution: "f,;tdf!Fb;",
         tip: "f and t are the fastest way to move inside a line. ; repeats them for free.",
@@ -252,13 +261,13 @@ third isle
 last isle",
         marks: "
 @
-
+^
 *
 
-
+^
 
 *
-
+^
 
         *",
         goal: None,

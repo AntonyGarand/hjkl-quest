@@ -1,6 +1,7 @@
 //! A level being played: the editor, the crystals, the keystroke count and
 //! which keys the player has learned. No UI here either.
 
+use crate::coach::Coach;
 use crate::levels::{LEVELS, Level, unlocked};
 use crate::vim::{Editor, Key, Mode, Outcome, Pos};
 
@@ -14,6 +15,8 @@ pub enum Event {
     Locked(char),
     Complete,
     Command(String),
+    /// The cursor landed on a trap and was thrown back.
+    Trapped(Pos),
     None,
 }
 
@@ -27,6 +30,13 @@ pub struct Session {
     allowed: String,
     /// Where the `:` that opened the command line is in `keys`.
     cmd_start: Option<usize>,
+    /// Tiles the cursor must not land on (it may pass over them).
+    pub traps: Vec<Pos>,
+    /// Times a trap caught the player this run.
+    pub trapped: usize,
+    pub coach: Coach,
+    /// The last tip from the coach, until the next key.
+    pub tip: String,
 }
 
 /// The game's own `:` commands: always available, and free.
@@ -71,6 +81,10 @@ impl Session {
             message: String::new(),
             allowed: unlocked(index),
             cmd_start: None,
+            traps: level.traps(),
+            trapped: 0,
+            coach: Coach::default(),
+            tip: String::new(),
         };
         session.collect();
         session
@@ -168,8 +182,29 @@ impl Session {
         self.keys.push(key);
         let revision = self.editor.revision;
         let cursor = self.editor.cursor;
+        let (before_mode, before_pending) = (self.editor.mode, self.editor.pending());
         let outcome = self.editor.feed(key);
         self.message.clear();
+        self.tip.clear();
+        // A finished normal-mode command goes to the coach.
+        if before_mode == Mode::Normal && self.editor.pending().is_empty() && matches!(outcome, Outcome::Ok) {
+            let token = format!("{before_pending}{key}");
+            if let Some(tip) = self.coach.push(token, &self.allowed) {
+                self.tip = tip;
+            }
+        }
+        // Landing on a trap throws the wisp back; the keys still count.
+        if self.editor.mode == Mode::Normal
+            && self.editor.pending().is_empty()
+            && self.editor.cursor != cursor
+            && self.traps.contains(&self.editor.cursor)
+        {
+            let at = self.editor.cursor;
+            self.editor.set_cursor(cursor);
+            self.trapped += 1;
+            self.message = "Ouch, a trap! Don't step on it: jump over it in one move".into();
+            return Event::Trapped(at);
+        }
         let left_cmdline = in_cmdline && self.editor.mode != (Mode::Command { search: false });
         let mut event = match outcome {
             Outcome::Ok => {
@@ -247,7 +282,7 @@ mod tests {
                 assert!(!s.complete, "level {i} {} completes early after {}", level.title, format_keys(&keys[..k]));
                 let event = s.press(key);
                 assert!(
-                    !matches!(event, Event::Locked(_) | Event::Bell),
+                    !matches!(event, Event::Locked(_) | Event::Bell | Event::Trapped(_)),
                     "level {i} {}: key {} ({k}) gave {event:?}: {}\nbuffer:\n{}",
                     level.title,
                     key,
@@ -273,7 +308,7 @@ mod tests {
     fn marks_lie_on_the_map() {
         for level in LEVELS {
             let e = Editor::new(level.text());
-            for p in level.gems().into_iter().chain([level.start()]) {
+            for p in level.gems().into_iter().chain(level.traps()).chain([level.start()]) {
                 assert!(
                     p.row < e.lines.len() && (p.col < e.line_len(p.row) || p.col == 0),
                     "{}: mark {p:?} is off the map",
@@ -329,6 +364,40 @@ mod tests {
         assert_eq!(s.editor.text(), before);
         assert_eq!(s.press(Key::CtrlR), Event::Edited);
         assert_ne!(s.editor.text(), before);
+    }
+
+    #[test]
+    fn traps_throw_back_single_steps_but_not_jumps() {
+        // Counting Sheep: traps every four tiles along the first row.
+        let mut s = Session::new(1);
+        let mut events = Vec::new();
+        for _ in 0..4 {
+            events.push(s.press(Key::Char('l')));
+        }
+        assert!(events.contains(&Event::Trapped(Pos { row: 0, col: 4 })), "{events:?}");
+        assert_eq!(s.editor.cursor, Pos { row: 0, col: 3 });
+        assert_eq!(s.keys.len(), 4);
+        // A count passes over the traps.
+        let mut s = Session::new(1);
+        for k in parse_keys("15l") {
+            assert!(!matches!(s.press(k), Event::Trapped(_)));
+        }
+        assert_eq!(s.editor.cursor, Pos { row: 0, col: 15 });
+        for level in LEVELS {
+            for t in level.traps() {
+                assert!(!level.gems().contains(&t) && level.start() != t, "{}: trap on a mark", level.title);
+            }
+        }
+    }
+
+    #[test]
+    fn the_coach_spots_slow_habits() {
+        let mut s = Session::new(2); // Word Hopping: counts, w and e known.
+        for k in parse_keys("hhhh") {
+            s.press(k);
+        }
+        assert!(s.tip.contains("4h"), "{}", s.tip);
+        assert_eq!(s.coach.spotted.len(), 1);
     }
 
     #[test]

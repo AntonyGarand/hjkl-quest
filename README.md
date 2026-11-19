@@ -19,6 +19,11 @@ native desktop app on Windows, macOS and Linux.
   (in place) or amber (missing), with a count of what's left to add and remove.
 - **Rulers** number the lines (with each line's distance from the cursor, for counts like `5j`) and the
   columns (every 5), so distances can be judged at a glance.
+- **Traps ▲** on the movement isles throw the wisp back if it *lands* on one: stepping `lllll` gets caught,
+  while `5l`, `e` or `f{c}` jump clean over. The keys still count.
+- **A habit coach** watches your commands and names the faster one you've already learned: `llll` → `4l` / `e`,
+  `0i` → `I`, `$a` → `A`, `dwi` → `cw`, `d$` → `D`, `lh` (moves that cancel out)… The completion card lists the
+  habits to break.
 - **Vim golf.** Every isle has a *par*: the keystrokes of a short known solution. Finish at par or under for
   three stars, and compare your keys with the golf line afterwards (hidden until you hover it, so it never
   spoils a retry).
@@ -64,6 +69,7 @@ For development, `HJKL_LEVEL=12 cargo run` opens an isle directly.
 | File | What it holds |
 |---|---|
 | `src/vim.rs` | A self-contained vim emulator: motions, operators, text objects, insert/replace/visual/block modes, search, registers, marks, macros, ex ranges with `:s :g :norm :m :t :sort`, undo/redo, `.` |
+| `src/coach.rs` | The habit coach: slow command patterns and the faster command for each |
 | `src/diff.rs` | How the buffer differs from the goal: extra characters, characters in place, and where missing text goes |
 | `src/levels.rs` | The campaign: maps, crystals, goals, unlocked keys and each isle's golf solution |
 | `src/game.rs` | A level being played: key locking, crystals, completion, stars. Its tests replay every golf solution and check it clears the isle at exactly par. |

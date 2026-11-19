@@ -6,6 +6,7 @@
 //! Native Shell.
 
 pub mod audio;
+pub mod coach;
 pub mod diff;
 pub mod game;
 pub mod levels;
@@ -371,6 +372,18 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                 KeyframeTiming::new(220.0),
             );
         }
+        Event::Trapped(p) => {
+            audio::play(Sfx::Locked, 0.6);
+            audio::play(Sfx::Bell, 0.4);
+            let (cx, cy) = tile_center(*p);
+            ui.burst_at.set((cx, cy));
+            motion.burst.set(0.0);
+            motion.burst.timing(1.0, 500.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+            motion.shake.keyframes(
+                [Keyframe::new(0.0), Keyframe::new(-9.0), Keyframe::new(9.0), Keyframe::new(-5.0), Keyframe::new(3.0), Keyframe::new(0.0)],
+                KeyframeTiming::new(340.0),
+            );
+        }
         Event::Locked(_) => {
             audio::play(Sfx::Locked, 0.45);
             motion.shake.keyframes(
@@ -491,6 +504,8 @@ fn draw_world(session: &Session) -> Painter {
             let wrong = diff.as_ref().is_some_and(|d| d.wrong[row][col]);
             let look = if is_selected(e, p) {
                 TileLook::Selected
+            } else if session.traps.contains(&p) {
+                TileLook::Trap
             } else if wrong {
                 TileLook::Wrong
             } else if goal.is_some() && ch == '.' {
@@ -501,6 +516,10 @@ fn draw_world(session: &Session) -> Painter {
             };
             painter = draw_tile(painter, p, Some(ch), look);
         }
+    }
+
+    for &t in &session.traps {
+        painter = draw_trap(painter, t);
     }
 
     let (Some(diff), Some(goal)) = (diff, goal) else { return painter };
@@ -534,6 +553,38 @@ fn draw_world(session: &Session) -> Painter {
     // isles readable.
     for (at, text) in &diff.inserts {
         painter = draw_insert(painter, *at, text, at.row == e.cursor.row);
+    }
+    painter
+}
+
+/// A trap: a dark plate with three spikes, red at the tips.
+/// The tile itself is tinted (TileLook::Trap); spikes stand at its edges
+/// so the letter on it stays readable.
+fn draw_trap(painter: Painter, p: Pos) -> Painter {
+    let (x, y) = tile_origin(p);
+    let (cx, cy) = (x + CW / 2.0 + SKEW / 2.0, y + CH / 2.0);
+    let mut painter = painter;
+    for (dx, dy) in [(-14.0, 2.0), (14.0, 2.0), (-10.0, -7.0), (10.0, -7.0)] {
+        let (bx, by) = (cx + dx, cy + dy + 5.0);
+        painter = painter
+            .fill_color(hex(0xb9c2d6))
+            .begin_path()
+            .move_to(bx - 3.0, by)
+            .line_to(bx, by - 10.0)
+            .line_to(bx + 3.0, by)
+            .close_path()
+            .fill()
+            .fill_color(hex(0x6c7690))
+            .begin_path()
+            .move_to(bx, by)
+            .line_to(bx, by - 10.0)
+            .line_to(bx + 3.0, by)
+            .close_path()
+            .fill()
+            .fill_color(hex(0xff4d4d))
+            .begin_path()
+            .arc(bx, by - 9.5, 1.3, 0.0, TAU)
+            .fill();
     }
     painter
 }
@@ -655,6 +706,7 @@ enum TileLook {
     Plank,
     Wrong,
     Selected,
+    Trap,
 }
 
 impl TileLook {
@@ -677,6 +729,7 @@ impl TileLook {
             TileLook::Plank => WOOD,
             TileLook::Wrong => EMBER,
             TileLook::Selected => SELECT,
+            TileLook::Trap => 0x6b2f3c,
         }
     }
 }
@@ -994,6 +1047,17 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
         for (at, _) in &diff.inserts {
             painter = painter.fill_color(hex(MISSING)).fill_rect(at.col as f32 * cw - 1.0, at.row as f32 * ch - 1.0, 2.5, ch + 1.0);
         }
+    }
+    for &t in &session.traps {
+        let (x, y) = (t.col as f32 * cw, t.row as f32 * ch);
+        painter = painter
+            .fill_color(hex(0xff4d4d))
+            .begin_path()
+            .move_to(x + cw / 2.0, y + 1.0)
+            .line_to(x + cw - 0.5, y + ch - 1.0)
+            .line_to(x + 0.5, y + ch - 1.0)
+            .close_path()
+            .fill();
     }
     for &(p, got) in &session.gems {
         if !got {
@@ -1656,7 +1720,15 @@ fn status_line(ui: Ui) -> impl IntoElement {
                     Mode::Command { search } => format!("{}{}▏", if search { '/' } else { ':' }, s.editor.cmdline),
                     _ => {
                         let msg = with_state_toast();
-                        if !msg.is_empty() { msg } else { s.message.clone() }
+                        if !msg.is_empty() {
+                            msg
+                        } else if !s.message.is_empty() {
+                            s.message.clone()
+                        } else if !s.tip.is_empty() {
+                            format!("💡 {}", s.tip)
+                        } else {
+                            String::new()
+                        }
                     }
                 })
                 .unwrap_or_default()
@@ -1838,6 +1910,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         let (index, keys, stars, par) = session_value(|s| (s.index, format_keys(&s.keys), s.stars(), s.par())).unwrap();
         let level = &LEVELS[index];
         let count = session_value(|s| s.keys.len()).unwrap();
+        let (habits, trapped) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.trapped)).unwrap();
         let last = index + 1 == LEVELS.len();
         let verdict = if count < par {
             "Under par! You beat the golf solution."
@@ -1884,6 +1957,19 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .child(text(format!("GOLF SOLUTION · {par}")).text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)).mt(px(8.0)))
                                 .child(spoiler(format_keys(&vim::parse_keys(level.solution)))),
                         )
+                        .child((!habits.is_empty() || trapped > 0).then(|| {
+                            view()
+                                .w_full()
+                                .gap_1()
+                                .mt(px(4.0))
+                                .child(text("HABITS TO BREAK").text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)))
+                                .children(habits.into_iter().take(4).map(|h| text(format!("• {h}")).font_family(MONO).text_size(px(13.0)).text_color(hex(0xffd76b))))
+                                .child((trapped > 0).then(|| {
+                                    text(format!("• caught by a trap {trapped}×: land only where you aim"))
+                                        .text_size(px(13.0))
+                                        .text_color(hex(0xff8a70))
+                                }))
+                        }))
                         .child(
                             view()
                                 .flex_row()

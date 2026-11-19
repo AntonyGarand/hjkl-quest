@@ -300,6 +300,13 @@ impl Editor {
         self
     }
 
+    /// Puts the cursor back somewhere (a trap throws it back).
+    pub fn set_cursor(&mut self, at: Pos) {
+        self.cursor = at;
+        self.clamp();
+        self.want = self.cursor.col;
+    }
+
     pub fn text(&self) -> String {
         self.lines.iter().map(|l| l.iter().collect::<String>()).collect::<Vec<_>>().join("\n")
     }
