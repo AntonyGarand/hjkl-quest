@@ -17,7 +17,9 @@ native desktop app on Windows, macOS and Linux.
   Tiles that still differ from the goal glow red, using a line-then-character diff, so only real mistakes light up.
 - **Vim golf.** Every isle has a *par*: the keystrokes of a short known solution. Finish at par or under for
   three stars, and compare your keys with the golf line afterwards.
-- `:q` returns to the map, `:e!` restarts the isle, `:n` skips it, `:mute` toggles sound.
+- A **minimap** in the corner shows the whole isle, the crystals left and the part of it on screen.
+- `:q` returns to the map, `:e!` restarts the isle, `:n` skips it, `:mute` toggles sound. These work from the
+  first isle and never cost keystrokes; real ex commands (`:s`, `:%s`, `:{n}`) unlock on isle 19.
 
 | Chapter | Commands |
 |---|---|

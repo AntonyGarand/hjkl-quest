@@ -25,6 +25,15 @@ pub struct Session {
     pub complete: bool,
     pub message: String,
     allowed: String,
+    /// Where the `:` that opened the command line is in `keys`.
+    cmd_start: Option<usize>,
+}
+
+/// The game's own `:` commands: always available, and free.
+pub const GAME_COMMANDS: &[&str] = &["q", "q!", "wq", "x", "levels", "menu", "e!", "restart", "r", "n", "next", "mute", "sound", "help", "h", "w"];
+
+pub fn is_game_command(cmd: &str) -> bool {
+    GAME_COMMANDS.contains(&cmd.trim())
 }
 
 pub fn stars(keys: usize, par: usize) -> u8 {
@@ -49,6 +58,7 @@ impl Session {
             complete: false,
             message: String::new(),
             allowed: unlocked(index),
+            cmd_start: None,
         };
         session.collect();
         session
@@ -90,6 +100,9 @@ impl Session {
                 }
             }
             Key::Enter | Key::Backspace => Err('⏎'),
+            // The command line always opens, for the game's own commands;
+            // real ex commands wait until `:` is learned.
+            Key::Char(':') if self.editor.mode == Mode::Normal => Ok(()),
             Key::Char(c) => {
                 let pending = self.editor.pending();
                 if c == '0' && self.editor.in_count() {
@@ -126,13 +139,32 @@ impl Session {
             };
             return Event::Locked(c);
         }
+        let opens_cmdline = key == Key::Char(':') && self.editor.mode == Mode::Normal && self.editor.pending().is_empty();
+        let in_cmdline = self.editor.mode == (Mode::Command { search: false });
+        if opens_cmdline {
+            self.cmd_start = Some(self.keys.len());
+        }
+        let ex_learned = self.allowed.contains(':');
+        // Before ex commands are learned, only the game's own run.
+        if in_cmdline && key == Key::Enter && !ex_learned && !is_game_command(&self.editor.cmdline) {
+            let cmd = self.editor.cmdline.clone();
+            self.editor.feed(Key::Esc);
+            self.drop_cmdline_keys();
+            self.message = format!(":{cmd} needs ex commands, learned on isle 19. Try :e! :q :n :mute");
+            return Event::Locked(':');
+        }
         self.keys.push(key);
         let revision = self.editor.revision;
         let cursor = self.editor.cursor;
         let outcome = self.editor.feed(key);
         self.message.clear();
+        let left_cmdline = in_cmdline && self.editor.mode != (Mode::Command { search: false });
         let mut event = match outcome {
             Outcome::Ok => {
+                if left_cmdline && !ex_learned {
+                    // An abandoned command line costs nothing either.
+                    self.drop_cmdline_keys();
+                }
                 if self.editor.revision != revision {
                     Event::Edited
                 } else if self.editor.cursor != cursor {
@@ -146,8 +178,8 @@ impl Session {
                 Event::Bell
             }
             Outcome::Command(cmd) => {
-                // Not a key that counts: the game's own commands.
-                self.keys.pop();
+                // The game's own commands: none of their keys count.
+                self.drop_cmdline_keys();
                 return Event::Command(cmd);
             }
         };
@@ -158,6 +190,12 @@ impl Session {
             event = Event::Complete;
         }
         event
+    }
+
+    fn drop_cmdline_keys(&mut self) {
+        if let Some(start) = self.cmd_start.take() {
+            self.keys.truncate(start);
+        }
     }
 
     fn collect(&mut self) -> Option<Pos> {
@@ -240,6 +278,32 @@ mod tests {
         assert!(s.keys.is_empty());
         assert_eq!(s.press(Key::Char('l')), Event::Moved);
         assert_eq!(s.keys.len(), 1);
+    }
+
+    #[test]
+    fn game_commands_work_before_ex_is_learned_and_cost_nothing() {
+        let mut s = Session::new(0);
+        s.press(Key::Char('l'));
+        let mut last = Event::None;
+        for k in parse_keys(":e!<CR>") {
+            last = s.press(k);
+        }
+        assert_eq!(last, Event::Command("e!".into()));
+        assert_eq!(s.keys.len(), 1);
+        // A real ex command is refused, and costs nothing.
+        for k in parse_keys(":s/a/b/<CR>") {
+            last = s.press(k);
+        }
+        assert_eq!(last, Event::Locked(':'));
+        assert_eq!(s.keys.len(), 1);
+        assert_eq!(s.editor.mode, Mode::Normal);
+        // Once learned, ex keys count as in vim golf.
+        let mut s = Session::new(LEVELS.len() - 2);
+        for k in parse_keys(":%s/foo/baz/g<CR>") {
+            s.press(k);
+        }
+        assert!(s.complete);
+        assert_eq!(s.keys.len(), 14);
     }
 
     #[test]

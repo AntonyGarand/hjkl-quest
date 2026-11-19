@@ -15,6 +15,7 @@ use std::f32::consts::TAU;
 use std::rc::Rc;
 
 
+use nsh_core::element::CanvasArg;
 use nsh_core::canvas::{CanvasGradient, CanvasTextAlign, CanvasTextBaseline};
 use nsh_core::storage::Storage;
 use nsh_core::prelude::*;
@@ -805,6 +806,98 @@ fn draw_hero(session: &Session, motion: &Motion) -> Painter {
     painter
 }
 
+/// The minimap's cell size for a buffer of `rows` × `cols`.
+/// The minimap's cell width and height for a buffer of `rows` × `cols`.
+fn minimap_cell(rows: usize, cols: usize) -> (f32, f32) {
+    let rows = rows.max(1) as f32;
+    let w = (240.0 / cols.max(1) as f32).min(120.0 / rows).clamp(2.0, 9.0);
+    let h = (w * 1.3).max(11.0).min((120.0 / rows).max(3.0));
+    (w, h)
+}
+
+fn minimap_size(session: &Session) -> (f32, f32) {
+    let e = &session.editor;
+    let goal_rows = session.level().goal_text().map_or(0, |g| g.lines().count());
+    let rows = e.lines.len().max(goal_rows);
+    let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(1).max(1);
+    let (cw, ch) = minimap_cell(rows, cols);
+    (cols as f32 * cw, rows as f32 * ch)
+}
+
+/// The whole isle in a corner: its tiles, the crystals left, the cursor
+/// and the part the stage shows, which follows the camera natively.
+fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painter {
+    let e = &session.editor;
+    let goal_rows = session.level().goal_text().map_or(0, |g| g.lines().count());
+    let rows = e.lines.len().max(goal_rows);
+    let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(1).max(1);
+    let (cw, ch) = minimap_cell(rows, cols);
+    let (mw, mh) = (cols as f32 * cw, rows as f32 * ch);
+    let goal: Option<Vec<Vec<char>>> = session.level().goal_text().map(|g| g.split('\n').map(|l| l.chars().collect()).collect());
+    let wrong = goal.as_ref().map(|g| wrong_marks(&e.lines, g));
+    let mut painter = Painter::new();
+    for (row, line) in e.lines.iter().enumerate() {
+        let y = row as f32 * ch;
+        if line.is_empty() {
+            painter = painter.fill_color(hexa(WOOD, 0.9)).fill_rect(0.0, y + 1.0, cw - 0.5, ch - 2.0);
+        }
+        for (col, &c) in line.iter().enumerate() {
+            let is_wrong = wrong.as_ref().is_some_and(|w| w[row].get(col).copied().unwrap_or(false));
+            let color = if is_wrong { EMBER } else { TileLook::of(c).color() };
+            painter = painter.fill_color(hex(color)).fill_rect(col as f32 * cw, y, cw - 0.5, ch - 0.5);
+        }
+    }
+    for &(p, got) in &session.gems {
+        if !got {
+            let (x, y) = (p.col as f32 * cw + cw / 2.0, p.row as f32 * ch + ch / 2.0);
+            painter = painter.fill_color(hex(GEM)).begin_path().arc(x, y, (cw * 0.55).max(2.0), 0.0, TAU).fill();
+        }
+    }
+    let cur = e.cursor;
+    painter = painter
+        .fill_color(hex(mode_color(e)))
+        .stroke_color(hex(0xffffff))
+        .line_width(1.0)
+        .fill_rect(cur.col as f32 * cw - 1.0, cur.row as f32 * ch - 1.0, cw + 1.5, ch + 1.5);
+
+    // The stage's window onto the board, mapped back to rows and columns.
+    let (vw, vh) = stage;
+    let x0 = PAD_X + (ROWS_ROOM - rows as f32 / 2.0) * SKEW;
+    let vx = motion.cam_x.mul(-cw / CW).add(-x0 * cw / CW);
+    let vy = motion.cam_y.mul(-ch / CH).add(-PAD_Y * ch / CH);
+    let (w, h) = (vw / CW * cw, vh / CH * ch);
+    // On an axis where the whole isle fits, the box spans the minimap.
+    let (fit_x, fit_y) = (w >= mw, h >= mh);
+    if !(fit_x && fit_y) {
+        let x: CanvasArg = if fit_x { 0.0.into() } else { (&vx).into() };
+        let y: CanvasArg = if fit_y { 0.0.into() } else { (&vy).into() };
+        let (w, h) = (if fit_x { mw } else { w }, if fit_y { mh } else { h });
+        painter = painter
+            .save()
+            .begin_path()
+            .move_to(-2.0, -2.0)
+            .line_to(mw + 2.0, -2.0)
+            .line_to(mw + 2.0, mh + 2.0)
+            .line_to(-2.0, mh + 2.0)
+            .close_path()
+            .clip()
+            .translate(x, y)
+            .fill_color(hexa(0xfff3b0, 0.12))
+            .stroke_color(hexa(0xfff3b0, 0.9))
+            .line_width(1.5)
+            .begin_path()
+            .move_to(0.0, 0.0)
+            .line_to(w, 0.0)
+            .line_to(w, h)
+            .line_to(0.0, h)
+            .close_path()
+            .fill()
+            .stroke()
+            .restore();
+    }
+    painter
+}
+
 fn draw_burst(at: (f32, f32), burst: &AnimatedValue) -> Painter {
     let (cx, cy) = at;
     let radius = burst.mul(30.0).add(4.0);
@@ -1146,6 +1239,7 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
     let hero = motion.clone();
     let burst = motion.clone();
     let card = motion.clone();
+    let minimap = motion.clone();
     let stage = view()
         .flex_1()
         .overflow_hidden()
@@ -1218,6 +1312,31 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                         ),
                 ),
         )
+        .child(dynamic(move || {
+            ui.tick.get();
+            let (mw, mh) = session_value(minimap_size)?;
+            let map = minimap.clone();
+            Some(
+                view()
+                    .absolute()
+                    .top(px(12.0))
+                    .right(px(12.0))
+                    .p(px(8.0))
+                    .rounded(px(10.0))
+                    .bg(hexa(0x05030f, 0.62))
+                    .border_1()
+                    .border_color(hexa(0xc9b8ff, 0.22))
+                    .child(
+                        canvas(move || {
+                            ui.tick.get();
+                            let stage = ui.stage.get();
+                            session_value(|s| draw_minimap(s, &map, stage)).unwrap_or_default()
+                        })
+                        .w(px(mw))
+                        .h(px(mh)),
+                    ),
+            )
+        }))
         .child(status_line(ui))
         .child(complete_card(ui, card));
 
