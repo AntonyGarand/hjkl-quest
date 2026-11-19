@@ -1,4 +1,4 @@
-//! The campaign: thirty-five isles of the Buffer Archipelago, each teaching a few
+//! The campaign: forty isles of the Buffer Archipelago, each teaching a few
 //! commands. Every level's `solution` is a vim-golf line: the tests replay it
 //! and check that it solves the level in exactly `par` keystrokes.
 
@@ -37,6 +37,23 @@ impl Level {
         self.marked('^')
     }
 
+    /// The scrolls on the isle's shelf, for `:r`, `:!ls` and Tab.
+    pub fn files(&self) -> &'static [(&'static str, &'static str)] {
+        match self.title {
+            "Scrolls" => &[("ingredients.txt", "flour\neggs\nmilk"), ("notes.txt", "Pancakes: mix, rest, fry."), ("weather.txt", "sunny")],
+            "Copy Desk" => &[("old.txt", "nothing new")],
+            _ => &[],
+        }
+    }
+
+    /// Files the goal also wants written, with their text.
+    pub fn want_files(&self) -> &'static [(&'static str, &'static str)] {
+        match self.title {
+            "Copy Desk" => &[("keep.txt", "buy milk\ncall mom")],
+            _ => &[],
+        }
+    }
+
     fn marked(&self, mark: char) -> Vec<Pos> {
         let mut out = Vec::new();
         for (row, line) in self.marks.trim_start_matches('\n').split('\n').enumerate() {
@@ -63,6 +80,11 @@ impl Level {
 }
 
 /// The normal-mode keys allowed in level `index`: everything unlocked so far.
+/// The isle that teaches ex commands (`:`), counted from 1.
+pub fn ex_isle() -> usize {
+    LEVELS.iter().position(|l| l.unlock.contains(':')).map_or(0, |i| i + 1)
+}
+
 pub fn unlocked(index: usize) -> String {
     LEVELS[..=index.min(LEVELS.len() - 1)].iter().map(|l| l.unlock).collect()
 }
@@ -73,7 +95,13 @@ pub static LEVELS: &[Level] = &[
         title: "First Steps",
         story: "You wake on a quiet meadow as a small cursor-wisp. Your arrows are gone. \
                 Your fingers rest on the home row, where they belong.",
-        teaches: &[("h", "step left"), ("j", "step down"), ("k", "step up"), ("l", "step right")],
+        teaches: &[
+            ("h", "step left"),
+            ("j", "step down"),
+            ("k", "step up"),
+            ("l", "step right"),
+            (":q!  :wq", "in vim, quit without saving, or save and quit; here both go back to the map"),
+        ],
         unlock: "hjkl",
         map: "
 .........
@@ -323,6 +351,38 @@ rock rock sand gold",
         tip: "Golfers search for the shortest unique pattern. Here a single g is enough.",
     },
     Level {
+        chapter: "IV · The Machine",
+        title: "Looking Back",
+        story: "The machine keeps a log of every leap you make. Search backward for what's \
+                behind you, then retrace your jumps without counting lines.",
+        teaches: &[
+            ("?text⏎", "search backward (n keeps going backward, N turns around)"),
+            ("Ctrl-o", "jump back to where you were before the last jump"),
+            ("Ctrl-i  Tab", "jump forward again"),
+            ("Ctrl-g", "show where you are: line, total lines, column"),
+        ],
+        unlock: "?\u{f}\t\u{7}",
+        map: "
+a gold coin
+sand and stone
+sand and stone
+you stand here and the ruby glints at the far end
+sand and stone
+the silver spoon
+sand
+sand",
+        marks: "
+  *
+
+
+@                                               *
+
+    *",
+        goal: None,
+        solution: "?go<CR><C-o>$/si<CR>",
+        tip: "Searches, G, gg, % and marks are jumps: Ctrl-o walks back through them, one by one.",
+    },
+    Level {
         chapter: "V · The Workshop",
         title: "Chomp",
         story: "Typos have crept into the old sign. Remove the extra letters and fix \
@@ -332,8 +392,9 @@ rock rock sand gold",
             ("X", "delete the character before the cursor"),
             ("r{c}", "replace the character under the cursor with c"),
             ("u  Ctrl-r", "undo a mistake, redo it (always available from here on)"),
+            ("U", "undo every change on the last changed line at once"),
         ],
-        unlock: "xXr",
+        unlock: "xXrU",
         map: "
 Thee cat zat onn thee mat",
         marks: "@",
@@ -534,6 +595,50 @@ no baz here"),
     },
     Level {
         chapter: "VIII · The Summit",
+        title: "Case Closed",
+        story: "Gold is written every which way up here. Searches can ignore case, and light \
+                up every match as you type.",
+        teaches: &[
+            (":set ic  :set noic", "searches (and :s) ignore case, or not"),
+            ("\\c", "in a pattern: ignore case for this search only"),
+            (":set hls  :set is", "highlight every match; show matches while typing"),
+            (":noh", "turn the highlight off until the next search"),
+        ],
+        unlock: "",
+        map: "
+Gold, GOLD and gold
+gold is GoLd",
+        marks: "@",
+        goal: Some("
+lead, lead and lead
+lead is lead"),
+        solution: ":%s/gold\\c/lead/g<CR>",
+        tip: "With :set ic smartcase, a capital in the pattern makes it exact again.",
+    },
+    Level {
+        chapter: "VIII · The Summit",
+        title: "Ask First",
+        story: "Not every cat is a cat. Add c to a substitute and it asks before each change.",
+        teaches: &[
+            (":%s/a/b/gc", "substitute, confirming each match"),
+            ("y  n", "replace this one, or skip it"),
+            ("a  q  l", "replace all the rest, quit, or replace this one and stop"),
+        ],
+        unlock: "",
+        map: "
+cat food for the cat
+the catalog of cats
+my cat sat",
+        marks: "@",
+        goal: Some("
+dog food for the dog
+the catalog of dogs
+my dog sat"),
+        solution: ":%s/cat/dog/gc<CR>yynyy",
+        tip: "The match being asked about is highlighted. Esc stops, keeping what you changed.",
+    },
+    Level {
+        chapter: "VIII · The Summit",
         title: "The Refactor",
         story: "The summit's last trial: the old function needs a new name, wider types and a typo \
                 fixed. Use everything you've learned and try to beat par.",
@@ -555,7 +660,53 @@ fn double(x: i64) -> i64 {
     },
     // ------------------------------------------------- beyond the summit
     Level {
-        chapter: "IX · The Vaults",
+        chapter: "IX · The Scriptorium",
+        title: "Scrolls",
+        story: "The scribes keep their scrolls as files. Read one straight into your text, \
+                peek at the shelf with the shell, and let Tab finish the names for you.",
+        teaches: &[
+            (":r FILE", "insert a file's text below the cursor"),
+            (":!ls  :!cat FILE", "run a shell command (here: ls, cat, echo, pwd, date)"),
+            ("Tab  Ctrl-d", "on the : line, complete a command or file name; list the choices"),
+            (":help", "vim's manual (here, :h shows these lessons again)"),
+        ],
+        unlock: "",
+        map: "
+# pancakes",
+        marks: "@",
+        goal: Some("
+# pancakes
+flour
+eggs
+milk"),
+        solution: ":r i<Tab><CR>",
+        tip: "Tab completes command names too: :so<Tab> gives :sort. In vim, :help and your ~/.vimrc are next.",
+    },
+    Level {
+        chapter: "IX · The Scriptorium",
+        title: "Copy Desk",
+        story: "Copy the errands to their own scroll, then clear them from the inbox. :w takes \
+                a file name, and a range, to write just part of the text.",
+        teaches: &[
+            (":w FILE", "write the text to a file"),
+            ("v  :w FILE", "select, then : gives :'<,'>w FILE: write just the selection"),
+            (":r !ls", "insert a shell command's output"),
+        ],
+        unlock: "",
+        map: "
+# inbox
+buy milk
+call mom
+spam spam",
+        marks: "@",
+        goal: Some("
+# inbox
+spam spam"),
+        solution: "jVj:w keep.txt<CR>dk",
+        tip: "The goal also wants keep.txt to hold the two errands. :!cat keep.txt shows what's in it.",
+    },
+    Level {
+        chapter: "X · The Vaults",
         title: "Named Vaults",
         story: "Below the summit lie the vaults: twenty-six named registers, a hand for \
                 every letter. Carry two things at once without one pushing out the other.",
@@ -581,7 +732,7 @@ crate"),
         tip: "Registers shine when you carry several things at once. Here plain dd and p can beat par: can you find how?",
     },
     Level {
-        chapter: "IX · The Vaults",
+        chapter: "X · The Vaults",
         title: "Waymarks",
         story: "The vault keepers leave waymarks to find their way back. Drop a mark, wander off, \
                 and return to it, or cut everything in between.",
@@ -609,7 +760,7 @@ the end"),
         tip: "Search, G and % are jumps: `` brings you back. A visual selection can also do this one, a little shorter.",
     },
     Level {
-        chapter: "X · The Clockwork",
+        chapter: "XI · The Clockwork",
         title: "Tally Marks",
         story: "The clockwork city counts everything. Why retype a number when you can wind it up \
                 or down?",
@@ -634,7 +785,7 @@ year 2026"),
         tip: "Ctrl-a finds the next number on the line by itself: no need to move onto it first.",
     },
     Level {
-        chapter: "X · The Clockwork",
+        chapter: "XI · The Clockwork",
         title: "Wind-up Golem",
         story: "A golem repeats whatever you show it. Record your keys once, then let it do the \
                 rest of the list.",
@@ -663,7 +814,7 @@ frank",
         tip: "End a macro on the next line (j) so it can run again. If a motion fails, the macro stops, so 99@a is safe.",
     },
     Level {
-        chapter: "X · The Clockwork",
+        chapter: "XI · The Clockwork",
         title: "Assembly Line",
         story: "The recipe needs numbered steps. A macro that copies a line and winds its number \
                 builds the whole list.",
@@ -683,7 +834,7 @@ step 6: stir"),
         tip: "Recording also runs the keys, so the first copy is made while you record.",
     },
     Level {
-        chapter: "XI · The Terraces",
+        chapter: "XII · The Terraces",
         title: "Terraces",
         story: "On the terraced hills every line sits at its own depth. Shift whole lines in and \
                 out (shiftwidth is 4 here).",
@@ -710,7 +861,7 @@ def tidy(xs):
         tip: "Indent the outer block first, then the inner ones: each shift adds to the last.",
     },
     Level {
-        chapter: "XI · The Terraces",
+        chapter: "XII · The Terraces",
         title: "Shouting Match",
         story: "The terrace criers argue in capitals. Case operators work like d and c: with any \
                 motion or text object.",
@@ -734,7 +885,7 @@ HELLO"),
         tip: "iw takes the underscore with it: max_size is one word.",
     },
     Level {
-        chapter: "XI · The Terraces",
+        chapter: "XII · The Terraces",
         title: "Overwrite",
         story: "The hero board has fixed columns. Replace mode types over the old text instead of \
                 pushing it right, so the columns stay lined up.",
@@ -751,7 +902,7 @@ HELLO"),
         tip: "R is ideal for tables and fixed-width data, where c would shift everything after it.",
     },
     Level {
-        chapter: "XII · The Glacier",
+        chapter: "XIII · The Glacier",
         title: "Ice Columns",
         story: "The glacier is cut in straight columns. Visual block mode selects a rectangle, \
                 and what you type on its first line appears on all of them.",
@@ -775,7 +926,7 @@ let blue = 3;"),
         tip: "The other lines are filled in when you press <Esc>, not while you type.",
     },
     Level {
-        chapter: "XII · The Glacier",
+        chapter: "XIII · The Glacier",
         title: "Next Match",
         story: "A variable needs a new name, but not where its name is part of another word. \
                 gn selects the next match of your search, so cgn changes it, and . does the next.",
@@ -798,7 +949,7 @@ save(data, tmpdir);"),
         tip: "cgn with . is like a find-and-replace you confirm one match at a time, skipping any with n.",
     },
     Level {
-        chapter: "XII · The Glacier",
+        chapter: "XIII · The Glacier",
         title: "Tag, You're It",
         story: "Ice-bound markup and stray paragraphs. Text objects know tags and paragraphs as \
                 well as words and brackets.",
@@ -825,7 +976,7 @@ more junk",
         tip: "it picks the innermost tag around the cursor; dap at the last paragraph takes the blank lines before it.",
     },
     Level {
-        chapter: "XIII · The Archive",
+        chapter: "XIV · The Archive",
         title: "Global Decree",
         story: "The archive's ledgers are a mess. :g runs a command on every line that matches \
                 a pattern; :v on every line that doesn't.",
@@ -855,7 +1006,7 @@ more junk",
         tip: "Patterns may start with ^ or end with $ to anchor them: :g/^#/d.",
     },
     Level {
-        chapter: "XIII · The Archive",
+        chapter: "XIV · The Archive",
         title: "Moving Day",
         story: "Whole sections need to move. Ex commands take a range of lines and move or copy \
                 them in one go.",
@@ -890,7 +1041,7 @@ MIT"),
         tip: "The line numbers on the left are what ranges count with. :m moves, :t copies (:co too).",
     },
     Level {
-        chapter: "XIII · The Archive",
+        chapter: "XIV · The Archive",
         title: "Normal Order",
         story: "The scribes want every function name shouted, and only those. :normal types \
                 normal-mode keys on each line that :g finds.",
@@ -935,7 +1086,7 @@ fn QUIT() {}"),
         tip: ":normal starts each line at its first column and ends insert mode for you.",
     },
     Level {
-        chapter: "XIII · The Archive",
+        chapter: "XIV · The Archive",
         title: "The Grand Refactor",
         story: "The archive's last door. Turn an old config into constants: prune it with :g, \
                 then teach a macro the rest. Everything you know is fair game.",

@@ -21,7 +21,9 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
                 .child(view().min_w(px(110.0)).items_start().child(chip(*keys, 0xfff3b0)))
                 .child(text(*what).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.88)).flex_1())
         });
-        let goal = if level.goal.is_some() {
+        let goal = if !level.want_files().is_empty() {
+            "Goal: make the text match the goal, and write the files it asks for."
+        } else if level.goal.is_some() {
             "Goal: edit the text until it matches the goal shown beside the isle."
         } else if !level.traps().is_empty() {
             "Goal: collect every crystal ◆. Spiked traps throw you back if you land on one: jump over them."
@@ -95,6 +97,7 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
 enum Cell {
     Plain,
     Selected,
+    Match,
     Cursor,
 }
 
@@ -118,6 +121,7 @@ fn example_card(ui: Ui, text_with_cursor: &'static str, keys: &'static str) -> i
             let e = &frame.editor;
             let insert = matches!(e.mode, Mode::Insert | Mode::Replace);
             let accent = mode_color(e);
+            let lit = e.search_highlights();
             let rows = e.lines.iter().enumerate().map(|(row, line)| {
                 let mut cells: Vec<(String, Cell)> = Vec::new();
                 let width = if row == e.cursor.row && e.cursor.col >= line.len() { line.len() + 1 } else { line.len().max(1) };
@@ -128,6 +132,8 @@ fn example_card(ui: Ui, text_with_cursor: &'static str, keys: &'static str) -> i
                         Cell::Cursor
                     } else if col < line.len() && is_selected(e, p) {
                         Cell::Selected
+                    } else if lit.iter().any(|(m, len)| m.row == row && col >= m.col && col < m.col + len) {
+                        Cell::Match
                     } else {
                         Cell::Plain
                     };
@@ -149,17 +155,20 @@ fn example_card(ui: Ui, text_with_cursor: &'static str, keys: &'static str) -> i
                         Cell::Cursor if insert => base.border_l_1().border_color(hex(accent)),
                         Cell::Cursor => base.bg(hex(accent)).rounded(px(2.0)),
                         Cell::Selected => base.bg(hexa(SELECT, 0.75)),
+                        Cell::Match => base.bg(hexa(0xffd76b, 0.45)),
                         Cell::Plain => base,
                     }
                 }))
             });
             let status = match e.mode {
-                Mode::Command { search } => format!("{}{}", if search { '/' } else { ':' }, e.cmdline),
+                _ if frame.message.is_some() && !matches!(e.mode, Mode::Command { .. }) => frame.message.clone().unwrap_or_default(),
+                Mode::Command { .. } => format!("{}{}", e.cmd_prefix(), e.cmdline),
                 Mode::Insert => "-- INSERT --".into(),
                 Mode::Replace => "-- REPLACE --".into(),
                 Mode::Visual { line: false } => "-- VISUAL --".into(),
                 Mode::Visual { line: true } => "-- VISUAL LINE --".into(),
                 Mode::Block => "-- VISUAL BLOCK --".into(),
+                Mode::Confirm => e.confirm_prompt(),
                 Mode::Normal => match e.recording_macro() {
                     Some(r) => format!("recording @{r}"),
                     None => "\u{a0}".into(),

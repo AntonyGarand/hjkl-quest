@@ -110,7 +110,7 @@ fn mode_color(e: &vim::Editor) -> u32 {
         Mode::Insert => 0x7dffa8,
         Mode::Visual { .. } | Mode::Block => 0xc9a2ff,
         Mode::Replace => 0xff8f8f,
-        Mode::Command { .. } => 0x8ec5ff,
+        Mode::Command { .. } | Mode::Confirm => 0x8ec5ff,
         Mode::Normal if !e.pending().is_empty() => 0xffb86b,
         Mode::Normal => 0xfff3b0,
     }
@@ -145,20 +145,15 @@ impl State {
         self.intro = false;
         if let Screen::Play(s) = &self.screen {
             self.seen[s.index] = true;
-            let text = self.seen.iter().enumerate().filter(|(_, s)| **s).map(|(i, _)| i.to_string()).collect::<Vec<_>>().join(",");
-            let _ = Storage::set_item("hjkl-quest.seen", text);
+            save_entries("hjkl-quest.seen-isles", self.seen.iter().enumerate().filter(|(_, s)| **s).map(|(i, _)| (i, "1".to_string())));
         }
     }
 }
 
 fn load_seen() -> Vec<bool> {
     let mut seen = vec![false; LEVELS.len()];
-    if let Some(saved) = Storage::get_item("hjkl-quest.seen") {
-        for i in saved.split(',').filter_map(|n| n.parse::<usize>().ok()) {
-            if i < seen.len() {
-                seen[i] = true;
-            }
-        }
+    for (i, _) in load_entries("hjkl-quest.seen-isles", "hjkl-quest.seen", ',') {
+        seen[i] = true;
     }
     seen
 }
@@ -187,28 +182,52 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> R {
     STATE.with(|s| f(&mut s.borrow_mut()))
 }
 
+/// The isles in the order the first saves used, when progress was kept by
+/// position: isles added since then would shift it, so it is now kept by title.
+const OLD_ORDER: &[&str] = &[
+    "First Steps", "Counting Sheep", "Word Hopping", "Punctuation Pass", "Edge of the World", "Long Jumps",
+    "Seek and Find", "Paragraph Isles", "Mirror Matching", "Search Party", "Chomp", "Demolition",
+    "Change of Heart", "Insert Coin", "Copycat", "Time Travel", "Inside Out", "Highlights", "Ex Marks the Spot",
+    "The Refactor", "Named Vaults", "Waymarks", "Tally Marks", "Wind-up Golem", "Assembly Line", "Terraces",
+    "Shouting Match", "Overwrite", "Ice Columns", "Next Match", "Tag, You're It", "Global Decree", "Moving Day",
+    "Normal Order", "The Grand Refactor",
+];
+
+fn index_of(title: &str) -> Option<usize> {
+    LEVELS.iter().position(|l| l.title == title)
+}
+
+/// Saved `title=value` pairs, or (from older saves) `index:value` pairs.
+fn load_entries(key: &str, old_key: &str, old_sep: char) -> Vec<(usize, String)> {
+    if let Some(saved) = Storage::get_item(key) {
+        return saved.split('|').filter_map(|e| e.split_once('=')).filter_map(|(t, v)| Some((index_of(t)?, v.to_string()))).collect();
+    }
+    let Some(saved) = Storage::get_item(old_key) else { return Vec::new() };
+    saved
+        .split(',')
+        .filter_map(|e| {
+            let (i, v) = if old_sep == ':' { e.split_once(':')? } else { (e, "1") };
+            let title = OLD_ORDER.get(i.parse::<usize>().ok()?)?;
+            Some((index_of(title)?, v.to_string()))
+        })
+        .collect()
+}
+
+fn save_entries(key: &str, entries: impl Iterator<Item = (usize, String)>) {
+    let text = entries.map(|(i, v)| format!("{}={v}", LEVELS[i].title)).collect::<Vec<_>>().join("|");
+    let _ = Storage::set_item(key, text);
+}
+
 fn load_progress() -> Vec<Option<usize>> {
     let mut best = vec![None; LEVELS.len()];
-    if let Some(saved) = Storage::get_item("hjkl-quest.best") {
-        for entry in saved.split(',') {
-            if let Some((i, n)) = entry.split_once(':')
-                && let (Ok(i), Ok(n)) = (i.parse::<usize>(), n.parse::<usize>())
-                    && i < best.len() {
-                        best[i] = Some(n);
-                    }
-        }
+    for (i, v) in load_entries("hjkl-quest.progress", "hjkl-quest.best", ':') {
+        best[i] = v.parse().ok();
     }
     best
 }
 
 fn save_progress(best: &[Option<usize>]) {
-    let text = best
-        .iter()
-        .enumerate()
-        .filter_map(|(i, b)| b.map(|n| format!("{i}:{n}")))
-        .collect::<Vec<_>>()
-        .join(",");
-    let _ = Storage::set_item("hjkl-quest.best", text);
+    save_entries("hjkl-quest.progress", best.iter().enumerate().filter_map(|(i, b)| b.map(|n| (i, n.to_string()))));
 }
 
 /// The animated values the board moves with.
@@ -284,6 +303,11 @@ fn key_table() -> Vec<(String, Key)> {
     keys.push(("ctrl+a".into(), Key::CtrlA));
     keys.push(("ctrl+x".into(), Key::CtrlX));
     keys.push(("ctrl+v".into(), Key::CtrlV));
+    keys.push(("tab".into(), Key::Tab));
+    keys.push(("ctrl+i".into(), Key::Tab));
+    keys.push(("ctrl+d".into(), Key::CtrlD));
+    keys.push(("ctrl+o".into(), Key::CtrlO));
+    keys.push(("ctrl+g".into(), Key::CtrlG));
     keys
 }
 
@@ -587,6 +611,12 @@ fn draw_world(session: &Session) -> Painter {
     for &t in &session.traps {
         painter = draw_trap(painter, t, e.char_at(t));
     }
+    // Search matches: 'hlsearch', 'incsearch', and the :s///c question.
+    for (at, len) in e.search_highlights() {
+        for col in at.col..at.col + len {
+            painter = draw_match(painter, Pos { row: at.row, col });
+        }
+    }
 
     let (Some(diff), Some(goal)) = (diff, goal) else { return painter };
     // Lines missing at the end show as ghost rows below the isle; lines
@@ -695,6 +725,23 @@ fn draw_trap(painter: Painter, p: Pos, c: Option<char>) -> Painter {
             .fill_text(&ch.to_string(), cx, cy + 0.5);
     }
     painter
+}
+
+/// A search match on a tile: a warm glow on its top face.
+fn draw_match(painter: Painter, p: Pos) -> Painter {
+    let (x, y) = tile_origin(p);
+    painter
+        .fill_color(hexa(0xffd76b, 0.38))
+        .stroke_color(hexa(0xffd76b, 0.95))
+        .line_width(1.5)
+        .begin_path()
+        .move_to(x + SKEW + 1.0, y + 1.0)
+        .line_to(x + SKEW + CW - 1.0, y + 1.0)
+        .line_to(x + CW - 1.0, y + CH - 1.0)
+        .line_to(x + 1.0, y + CH - 1.0)
+        .close_path()
+        .fill()
+        .stroke()
 }
 
 /// A small label in a rounded pill, its left edge at `x`, centred on `y`.
@@ -1852,6 +1899,7 @@ fn status_line(ui: Ui) -> impl IntoElement {
                     Mode::Block => "-- VISUAL BLOCK --".to_string(),
                     Mode::Replace => "-- REPLACE --".to_string(),
                     Mode::Command { .. } => "COMMAND".to_string(),
+                    Mode::Confirm => "CONFIRM".to_string(),
                 })
                 .unwrap_or_default()
             })
@@ -1868,7 +1916,8 @@ fn status_line(ui: Ui) -> impl IntoElement {
             text(move || {
                 ui.tick.get();
                 session_value(|s| match s.editor.mode {
-                    Mode::Command { search } => format!("{}{}▏", if search { '/' } else { ':' }, s.editor.cmdline),
+                    Mode::Command { .. } => format!("{}{}▏", s.editor.cmd_prefix(), s.editor.cmdline),
+                    Mode::Confirm => s.editor.confirm_prompt(),
                     _ => {
                         let msg = with_state_toast();
                         if !msg.is_empty() {
@@ -2007,6 +2056,30 @@ fn side_panel(index: usize, ui: Ui) -> impl IntoElement {
                         .line_height(px(16.0))
                         .text_color(hexa(0xece6ff, 0.5)),
                 )
+        }))
+        .child((!level.files().is_empty() || !level.want_files().is_empty()).then(|| {
+            let shelf = level.files().iter().map(|(n, _)| *n).collect::<Vec<_>>().join("  ");
+            view()
+                .gap_1()
+                .mt(px(4.0))
+                .child(text("ON THE SHELF").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)))
+                .child(text(shelf).font_family(MONO).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.8)))
+                .children(level.want_files().iter().map(move |&(name, want)| {
+                    view()
+                        .gap_1()
+                        .mt(px(4.0))
+                        .child(
+                            text(move || {
+                                ui.tick.get();
+                                let done = session_value(|s| s.editor.files.get(name).is_some_and(|f| f == want)).unwrap_or(false);
+                                format!("{} AND WRITE {name}", if done { "✓" } else { "…" })
+                            })
+                            .text_size(px(11.0))
+                            .letter_spacing(px(1.2))
+                            .text_color(hex(PRESENT)),
+                        )
+                        .child(text(want.to_string()).font_family(MONO).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.75)))
+                }))
         }))
         .child((level.goal.is_none()).then(|| {
             text("Collect every crystal ◆ to clear the isle.").text_size(px(13.0)).text_color(hex(GEM)).mt(px(4.0))

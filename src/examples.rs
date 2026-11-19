@@ -2,7 +2,7 @@
 //! the cursor starts (marked `▮`, before its character) and the keys to
 //! press. They run on the real engine, so they show exactly what happens.
 
-use crate::vim::{Editor, Key, parse_keys, pos};
+use crate::vim::{Editor, Key, Outcome, parse_keys, pos};
 
 /// The cursor's place in an example's text: just before this mark.
 pub const CURSOR: char = '▮';
@@ -11,7 +11,12 @@ pub const CURSOR: char = '▮';
 pub struct Frame {
     pub editor: Editor,
     pub typed: usize,
+    /// What the editor said after this key (Ctrl-g, `:!ls`, a prompt).
+    pub message: Option<String>,
 }
+
+/// The files every example can see, for `:r`, `:w` and the shell.
+const SHELF: &[(&str, &str)] = &[("notes.txt", "hello\nworld"), ("todo.txt", "buy milk")];
 
 /// The editor before any key, and after each one.
 pub fn frames(text: &str, keys: &str) -> Vec<Frame> {
@@ -32,11 +37,18 @@ pub fn frames(text: &str, keys: &str) -> Vec<Frame> {
         }
     }
     let mut editor = Editor::new(&plain).with_cursor(at);
+    editor.files = SHELF.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect();
     let keys: Vec<Key> = parse_keys(keys);
-    let mut out = vec![Frame { editor: editor.clone(), typed: 0 }];
+    let mut out = vec![Frame { editor: editor.clone(), typed: 0, message: None }];
+    let mut message = None;
     for (i, &k) in keys.iter().enumerate() {
-        editor.feed(k);
-        out.push(Frame { editor: editor.clone(), typed: i + 1 });
+        match editor.feed(k) {
+            Outcome::Info(m) => message = Some(m),
+            Outcome::Bell(m) if !m.is_empty() => message = Some(m),
+            _ if editor.mode == crate::vim::Mode::Normal && k != Key::Enter => message = None,
+            _ => {}
+        }
+        out.push(Frame { editor: editor.clone(), typed: i + 1, message: message.clone() });
     }
     out
 }
@@ -54,7 +66,8 @@ pub fn examples(title: &str) -> &'static [(&'static str, &'static str)] {
         "Paragraph Isles" => &[("▮one\ntwo\n\nthree\n\nfour", "}}"), ("one\n\ntwo\nth▮ree", "{")],
         "Mirror Matching" => &[("▮if (a(b)) x", "%"), ("f(a, [1, 2▮])", "%")],
         "Search Party" => &[("▮cat dog cat bird", "/cat<CR>n"), ("▮dog cat dog", "*")],
-        "Chomp" => &[("hel▮llo", "x"), ("▮bat", "rc"), ("▮oops", "xu")],
+        "Looking Back" => &[("cat\ndog\n▮cat", "?cat<CR>"), ("▮a\nb\nc\nd", "G<C-o><Tab>"), ("a\n▮bee\nc", "<C-g>")],
+        "Chomp" => &[("hel▮llo", "x"), ("▮bat", "rc"), ("▮oops", "xu"), ("ab▮c def", "xxU")],
         "Demolition" => &[("▮delete me keep", "dw"), ("keep ▮the rest", "D"), ("▮line one\nline two", "dd"), ("▮a,b,c", "dt,")],
         "Change of Heart" => &[("▮hello world", "cwbye<Esc>"), ("x = ▮old;", "Cnew;<Esc>"), ("▮abc", "sX<Esc>")],
         "Insert Coin" => &[("▮list", "Imy <Esc>"), ("▮list", "A:<Esc>"), ("▮a\nc", "ob<Esc>")],
@@ -63,6 +76,10 @@ pub fn examples(title: &str) -> &'static [(&'static str, &'static str)] {
         "Inside Out" => &[("say \"▮hi there\"", "ci\"yo<Esc>"), ("f(▮a, b)", "di("), ("a ▮word here", "daw")],
         "Highlights" => &[("▮shout this", "veU"), ("▮a\nb\nc", "Vjd"), ("▮one\ntwo", "J")],
         "Ex Marks the Spot" => &[("▮foo is foo", ":s/foo/bar/<CR>"), ("▮foo\nfoo foo", ":%s/foo/bar/g<CR>"), ("▮a\nb\nc", ":3<CR>")],
+        "Case Closed" => &[("▮Gold gold GOLD", ":set ic<CR>/gold<CR>n"), ("▮a gold GOLD", "/GOLD\\c<CR>"), ("▮cat, a cat", ":set hls<CR>/cat<CR>")],
+        "Ask First" => &[("▮cat cat cat", ":s/cat/dog/gc<CR>yny")],
+        "Scrolls" => &[("▮# shelf", ":r notes.txt<CR>"), ("▮x", ":!ls<CR>"), ("▮x", ":r t<Tab><CR>")],
+        "Copy Desk" => &[("▮a\nb\nc", "jVj:w part.txt<CR>:!cat part.txt<CR>"), ("▮files:", ":r !ls<CR>")],
         "The Refactor" => &[("▮fn old() {}", "wcwnew<Esc>"), ("▮i32 + i32", ":s/32/64/g<CR>")],
         "Named Vaults" => &[("▮lamp\ncrate\nvault:", "\"addj\"ap"), ("▮keep\njunk", "yyj\"_ddp")],
         "Waymarks" => &[("▮start\nmiddle\nend", "maG`a"), ("keep\n▮cut\ncut\nkeep", "majd'a")],
@@ -99,6 +116,7 @@ mod tests {
                 let plain: String = text.chars().filter(|c| *c != CURSOR).collect();
                 let at = frames(text, "")[0].editor.cursor;
                 let mut e = Editor::new(&plain).with_cursor(at);
+                e.files = SHELF.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect();
                 for k in parse_keys(keys) {
                     let out = e.feed(k);
                     assert!(!matches!(out, Outcome::Bell(ref m) if !m.is_empty()), "{}: {keys} on {text:?}: {out:?}", level.title);

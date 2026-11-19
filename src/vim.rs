@@ -16,6 +16,11 @@ pub enum Key {
     CtrlA,
     CtrlX,
     CtrlV,
+    /// Tab, which is also Ctrl-i.
+    Tab,
+    CtrlD,
+    CtrlO,
+    CtrlG,
 }
 
 impl Key {
@@ -31,6 +36,10 @@ impl Key {
             Key::CtrlA => '\u{1}',
             Key::CtrlX => '\u{18}',
             Key::CtrlV => '\u{16}',
+            Key::Tab => '\t',
+            Key::CtrlD => '\u{4}',
+            Key::CtrlO => '\u{f}',
+            Key::CtrlG => '\u{7}',
         }
     }
 
@@ -43,6 +52,10 @@ impl Key {
             '\u{1}' => Key::CtrlA,
             '\u{18}' => Key::CtrlX,
             '\u{16}' => Key::CtrlV,
+            '\t' => Key::Tab,
+            '\u{4}' => Key::CtrlD,
+            '\u{f}' => Key::CtrlO,
+            '\u{7}' => Key::CtrlG,
             c => Key::Char(c),
         }
     }
@@ -60,6 +73,10 @@ impl fmt::Display for Key {
             Key::CtrlA => write!(f, "<C-a>"),
             Key::CtrlX => write!(f, "<C-x>"),
             Key::CtrlV => write!(f, "<C-v>"),
+            Key::Tab => write!(f, "<Tab>"),
+            Key::CtrlD => write!(f, "<C-d>"),
+            Key::CtrlO => write!(f, "<C-o>"),
+            Key::CtrlG => write!(f, "<C-g>"),
         }
     }
 }
@@ -82,6 +99,10 @@ pub fn parse_keys(s: &str) -> Vec<Key> {
                     "c-a" => Some(Key::CtrlA),
                     "c-x" => Some(Key::CtrlX),
                     "c-v" => Some(Key::CtrlV),
+                    "tab" | "c-i" => Some(Key::Tab),
+                    "c-d" => Some(Key::CtrlD),
+                    "c-o" => Some(Key::CtrlO),
+                    "c-g" => Some(Key::CtrlG),
                     "space" => Some(Key::Char(' ')),
                     "lt" => Some(Key::Char('<')),
                     _ => None,
@@ -122,6 +143,8 @@ pub enum Mode {
     /// Replace mode (`R`): typing overwrites.
     Replace,
     Command { search: bool },
+    /// `:s///c`: asking whether to replace each match.
+    Confirm,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +155,16 @@ pub enum Outcome {
     Bell(String),
     /// A `:` command the editor does not know: for the game to handle.
     Command(String),
+    /// Something to tell the player (Ctrl-g, `:!ls`, a prompt).
+    Info(String),
+}
+
+/// A `:s///c` in progress: the matches left, and what to put instead.
+#[derive(Debug, Clone)]
+struct ConfirmSub {
+    /// (row, col, length) of each match, in order.
+    matches: Vec<(usize, usize, usize)>,
+    rep: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -221,6 +254,23 @@ pub struct Editor {
     last_sub: Option<(String, String, bool)>,
     /// Rows `:g` still has to visit, kept up to date as lines move.
     g_targets: Option<Vec<usize>>,
+    /// The last search went backward (`?`, `#`): `n` keeps that way.
+    pub search_back: bool,
+    /// The jump list (Ctrl-o, Ctrl-i) and where we are in it.
+    jumps: Vec<Pos>,
+    jump_at: usize,
+    /// The line `U` restores: its row and its text before the latest changes.
+    line_undo: Option<(usize, Vec<char>)>,
+    /// A small file system for `:w`, `:r` and the shell.
+    pub files: std::collections::BTreeMap<String, String>,
+    pub ignorecase: bool,
+    pub smartcase: bool,
+    pub hlsearch: bool,
+    pub incsearch: bool,
+    confirm: Option<ConfirmSub>,
+    /// Command-line completion: the candidates, which one is shown, and the
+    /// text before the word being completed.
+    completion: Option<(Vec<String>, usize, String)>,
     pending: Vec<Key>,
     want: usize,
     undo: Vec<Snapshot>,
@@ -280,6 +330,17 @@ impl Editor {
             replaced: Vec::new(),
             last_sub: None,
             g_targets: None,
+            search_back: false,
+            jumps: Vec::new(),
+            jump_at: 0,
+            line_undo: None,
+            files: std::collections::BTreeMap::new(),
+            ignorecase: false,
+            smartcase: false,
+            hlsearch: false,
+            incsearch: false,
+            confirm: None,
+            completion: None,
             pending: Vec::new(),
             want: 0,
             undo: Vec::new(),
@@ -409,6 +470,10 @@ impl Editor {
         if self.replaying || self.quiet > 0 {
             return;
         }
+        let row = self.cursor.row;
+        if self.line_undo.as_ref().map(|(r, _)| *r) != Some(row) {
+            self.line_undo = Some((row, self.lines[row].clone()));
+        }
         self.undo.push(Snapshot { lines: self.lines.clone(), cursor: self.cursor });
         self.redo.clear();
     }
@@ -498,6 +563,7 @@ impl Editor {
             Mode::Insert => self.insert_key(key),
             Mode::Replace => self.replace_key(key),
             Mode::Command { search } => self.command_key(key, search),
+            Mode::Confirm => self.confirm_key(key),
             Mode::Normal | Mode::Visual { .. } | Mode::Block => self.normal_key(key),
         };
         // A change ends when we are back in normal mode with nothing pending.
@@ -507,6 +573,15 @@ impl Editor {
                     self.last_change = rec;
                 }
         outcome
+    }
+
+    /// Feeds keys and returns what the last one did.
+    pub fn feed_all_last(&mut self, keys: &[Key]) -> Outcome {
+        let mut last = Outcome::Ok;
+        for &k in keys {
+            last = self.feed(k);
+        }
+        last
     }
 
     pub fn feed_all(&mut self, keys: &[Key]) {
@@ -573,6 +648,14 @@ impl Editor {
                 self.cursor.col += 1;
                 self.changed();
             }
+            Key::Tab => {
+                let n = SHIFT - self.cursor.col % SHIFT;
+                for _ in 0..n {
+                    self.lines[self.cursor.row].insert(self.cursor.col, ' ');
+                    self.cursor.col += 1;
+                }
+                self.changed();
+            }
             _ => return Outcome::Bell("That key does nothing in insert mode here".into()),
         }
         Outcome::Ok
@@ -626,7 +709,11 @@ impl Editor {
     }
 
     fn command_key(&mut self, key: Key, search: bool) -> Outcome {
+        if !matches!(key, Key::Tab | Key::CtrlD) {
+            self.completion = None;
+        }
         match key {
+            Key::Tab | Key::CtrlD if !search => self.complete(key == Key::CtrlD),
             Key::Esc => {
                 self.mode = Mode::Normal;
                 self.cmdline.clear();
@@ -642,7 +729,7 @@ impl Editor {
                 self.cmdline.push(c);
                 Outcome::Ok
             }
-            Key::CtrlR | Key::CtrlA | Key::CtrlX | Key::CtrlV => Outcome::Ok,
+            Key::CtrlR | Key::CtrlA | Key::CtrlX | Key::CtrlV | Key::Tab | Key::CtrlD | Key::CtrlO | Key::CtrlG => Outcome::Ok,
             Key::Enter => {
                 self.mode = Mode::Normal;
                 let line = std::mem::take(&mut self.cmdline);
@@ -653,9 +740,10 @@ impl Editor {
                     if !line.is_empty() {
                         self.last_search = Some(line);
                     }
-                    match self.search_from(self.cursor, true, false) {
+                    match self.search_from(self.cursor, !self.search_back, false) {
                         Some(p) => {
                             self.marks.insert('\'', self.cursor);
+                            self.record_jump(self.cursor);
                             self.cursor = p;
                             self.want = p.col;
                             Outcome::Ok
@@ -766,6 +854,7 @@ impl Editor {
         if rest.trim().is_empty() {
             if let Some((_, b)) = range {
                 self.marks.insert('\'', self.cursor);
+                self.record_jump(self.cursor);
                 self.cursor = pos(b, self.first_non_blank(b));
                 self.want = self.cursor.col;
             }
@@ -796,6 +885,10 @@ impl Editor {
                     };
                     let rep = parts.get(1).copied().unwrap_or("").to_string();
                     let global = parts.get(2).is_some_and(|f| f.contains('g'));
+                    if parts.get(2).is_some_and(|f| f.contains('c')) {
+                        self.last_search = Some(pat.clone());
+                        return self.start_confirm(a, b, &pat, &rep, global);
+                    }
                     (pat, rep, global)
                 };
                 self.last_search = Some(pat.clone());
@@ -897,7 +990,8 @@ impl Editor {
                 }
                 self.last_search = Some(pat.clone());
                 let (a, b) = range.unwrap_or((0, self.lines.len() - 1));
-                let targets: Vec<usize> = (a..=b).filter(|&r| find_all(&pat, &self.lines[r]).is_empty() == invert).collect();
+                let icase = self.icase(&pat);
+                let targets: Vec<usize> = (a..=b).filter(|&r| find_all(&pat, &self.lines[r], icase).is_empty() == invert).collect();
                 if targets.is_empty() {
                     return Outcome::Bell(format!("Pattern not found: {pat}"));
                 }
@@ -960,6 +1054,50 @@ impl Editor {
                 }
                 Outcome::Ok
             }
+            "w" | "write" if !arg.trim().is_empty() => {
+                let name = arg.trim().to_string();
+                let (a, b) = range.unwrap_or((0, self.lines.len() - 1));
+                let text = self.lines[a..=b].iter().map(|l| l.iter().collect::<String>()).collect::<Vec<_>>().join("\n");
+                let n = b - a + 1;
+                self.files.insert(name.clone(), text);
+                Outcome::Info(format!("\"{name}\" {n}L written"))
+            }
+            "r" | "re" | "read" if !arg.trim().is_empty() => {
+                let arg = arg.trim();
+                let text = match arg.strip_prefix('!') {
+                    Some(cmd) => match self.shell(cmd.trim()) {
+                        Ok(out) => out,
+                        Err(msg) => return Outcome::Bell(msg),
+                    },
+                    None => match self.files.get(arg) {
+                        Some(t) => t.clone(),
+                        None => return Outcome::Bell(format!("E484: Can't open file {arg}")),
+                    },
+                };
+                let after = range.map_or(cur, |(_, b)| b);
+                let before = self.lines.clone();
+                let cursor = self.cursor;
+                let new: Vec<Vec<char>> = text.split('\n').map(|l| l.chars().collect()).collect();
+                let n = new.len();
+                for (k, l) in new.into_iter().enumerate() {
+                    self.lines.insert(after + 1 + k, l);
+                }
+                self.retarget_inserted(after + 1, n);
+                let row = after + 1;
+                self.cursor = pos(row, self.first_non_blank(row));
+                self.push_undo(before, cursor);
+                self.changed();
+                Outcome::Ok
+            }
+            "!" => match self.shell(arg.trim()) {
+                Ok(out) => Outcome::Info(out.replace('\n', "  ")),
+                Err(msg) => Outcome::Bell(msg),
+            },
+            "se" | "set" => self.set_options(arg),
+            "noh" | "nohl" | "nohlsearch" => {
+                self.hlsearch = false;
+                Outcome::Ok
+            }
             "j" | "join" => {
                 let b = if range.is_some_and(|(x, y)| x != y) { b } else { (a + 1).min(self.lines.len() - 1) };
                 if b == a {
@@ -995,7 +1133,7 @@ impl Editor {
         let mut last = None;
         for row in a..=b.min(self.lines.len() - 1) {
             let line = self.lines[row].clone();
-            let mut hits = find_all(pat, &line);
+            let mut hits = find_all(pat, &line, self.icase(pat));
             if hits.is_empty() {
                 continue;
             }
@@ -1269,14 +1407,16 @@ impl Editor {
                     return Err(Parse::Invalid);
                 }
                 let mut p = cur;
+                let forward = (c == 'n') != self.search_back;
                 for _ in 0..n {
-                    p = self.search_from(p, c == 'n', false).ok_or(Parse::Invalid)?;
+                    p = self.search_from(p, forward, false).ok_or(Parse::Invalid)?;
                 }
                 jm(p, MotionKind::Exclusive)
             }
             '*' | '#' => {
                 let word = self.word_under(cur).ok_or(Parse::Invalid)?;
                 self.last_search = Some(format!(r"\<{word}\>"));
+                self.search_back = c == '#';
                 let mut p = cur;
                 for _ in 0..n {
                     p = self.search_from(p, c == '*', true).ok_or(Parse::Invalid)?;
@@ -1291,6 +1431,9 @@ impl Editor {
     fn apply_motion(&mut self, motion: Motion) {
         if motion.jump {
             self.marks.insert('\'', self.cursor);
+            if motion.to != self.cursor {
+                self.record_jump(self.cursor);
+            }
         }
         self.cursor = motion.to;
         if motion.keeps_want {
@@ -1366,6 +1509,14 @@ impl Editor {
                     Ok(self.redo_change(n))
                 }
                 Key::CtrlA => Ok(self.increment(n as i64)),
+                Key::CtrlO | Key::Tab => {
+                    self.recording = None;
+                    Ok(self.jump_through(key == Key::CtrlO, n))
+                }
+                Key::CtrlG => {
+                    self.recording = None;
+                    Ok(Outcome::Info(self.where_am_i()))
+                }
                 Key::CtrlX => Ok(self.increment(-(n as i64))),
                 Key::CtrlV => {
                     self.recording = None;
@@ -1562,10 +1713,30 @@ impl Editor {
                 self.anchor = self.cursor;
                 Ok(Outcome::Ok)
             }
-            ':' | '/' => {
+            ':' | '/' | '?' => {
                 self.recording = None;
-                self.mode = Mode::Command { search: c == '/' };
+                self.mode = Mode::Command { search: c != ':' };
+                if c != ':' {
+                    self.search_back = c == '?';
+                }
                 self.cmdline.clear();
+                Ok(Outcome::Ok)
+            }
+            'U' => {
+                self.recording = None;
+                let Some((row, text)) = self.line_undo.take() else {
+                    return Ok(Outcome::Bell("No line to restore".into()));
+                };
+                if row >= self.lines.len() {
+                    return Ok(Outcome::Bell("No line to restore".into()));
+                }
+                self.snapshot_force();
+                // U again undoes the U.
+                let now = std::mem::replace(&mut self.lines[row], text);
+                self.line_undo = Some((row, now));
+                self.cursor = pos(row, 0);
+                self.want = 0;
+                self.changed();
                 Ok(Outcome::Ok)
             }
             _ => Err(Parse::Invalid),
@@ -2378,9 +2549,10 @@ impl Editor {
     /// Every match of `pat` in the buffer, overlapping as vim's search.
     fn all_hits(&self, pat: &str, whole_word: bool) -> Vec<(Pos, usize)> {
         let mut hits = Vec::new();
+        let icase = self.icase(pat);
         for (row, line) in self.lines.iter().enumerate() {
             for col in 0..=line.len() {
-                if let Some(len) = match_at(pat, line, col) {
+                if let Some(len) = match_at(pat, line, col, icase) {
                     if whole_word {
                         let before = col > 0 && class(line[col - 1], false) == 2;
                         let after = col + len < line.len() && class(line[col + len], false) == 2;
@@ -2669,6 +2841,300 @@ impl Editor {
     }
 }
 
+// ------------------------------------------------- vimtutor's extras
+
+/// Ex commands Tab completes (vimtutor 7.3).
+const EX_NAMES: &[&str] = &[
+    "copy", "delete", "global", "help", "join", "move", "nohlsearch", "normal", "quit", "read", "set", "sort", "substitute",
+    "vglobal", "write", "wq",
+];
+
+/// Options `:set` knows, for completion.
+const OPTIONS: &[&str] = &[
+    "hlsearch", "ignorecase", "incsearch", "nohlsearch", "noignorecase", "noincsearch", "nosmartcase", "smartcase",
+];
+
+impl Editor {
+    /// A jump leaves `from` in the jump list (one entry per line).
+    fn record_jump(&mut self, from: Pos) {
+        self.jumps.truncate(self.jump_at.min(self.jumps.len()));
+        self.jumps.retain(|p| p.row != from.row);
+        self.jumps.push(from);
+        if self.jumps.len() > 50 {
+            self.jumps.remove(0);
+        }
+        self.jump_at = self.jumps.len();
+    }
+
+    /// Ctrl-o (back) and Ctrl-i / Tab (forward) through the jump list.
+    fn jump_through(&mut self, back: bool, n: usize) -> Outcome {
+        for _ in 0..n {
+            if back {
+                if self.jump_at == 0 {
+                    return Outcome::Bell("At the start of the jump list".into());
+                }
+                // Leaving the newest place: remember it, to come back with Ctrl-i.
+                if self.jump_at == self.jumps.len() {
+                    let here = self.cursor;
+                    self.jumps.retain(|p| p.row != here.row);
+                    self.jumps.push(here);
+                    self.jump_at = self.jumps.len() - 1;
+                    if self.jump_at == 0 {
+                        return Outcome::Bell("At the start of the jump list".into());
+                    }
+                }
+                self.jump_at -= 1;
+            } else {
+                if self.jump_at + 1 >= self.jumps.len() {
+                    return Outcome::Bell("At the end of the jump list".into());
+                }
+                self.jump_at += 1;
+            }
+            let to = self.jumps[self.jump_at];
+            self.cursor = pos(to.row.min(self.lines.len() - 1), to.col);
+            self.clamp();
+            self.want = self.cursor.col;
+        }
+        Outcome::Ok
+    }
+
+    /// Ctrl-g: where the cursor is (vimtutor 4.1).
+    pub fn where_am_i(&self) -> String {
+        let n = self.lines.len();
+        let row = self.cursor.row + 1;
+        format!("\"isle\" {n} lines --{}%-- line {row} of {n}, col {}", row * 100 / n, self.cursor.col + 1)
+    }
+
+    /// The prompt in front of the command line: `:`, `/` or `?`.
+    pub fn cmd_prefix(&self) -> char {
+        match self.mode {
+            Mode::Command { search: true } => {
+                if self.search_back { '?' } else { '/' }
+            }
+            _ => ':',
+        }
+    }
+
+    /// Whether a pattern ignores case: `\c` / `\C` in it decide, else
+    /// 'ignorecase', unless 'smartcase' and it has a capital.
+    fn icase(&self, pat: &str) -> bool {
+        if pat.contains(r"\c") {
+            true
+        } else if pat.contains(r"\C") {
+            false
+        } else {
+            self.ignorecase && !(self.smartcase && pat.chars().any(|c| c.is_uppercase()))
+        }
+    }
+
+    /// The matches to light up: what the search being typed finds
+    /// ('incsearch'), else the last search ('hlsearch').
+    pub fn search_highlights(&self) -> Vec<(Pos, usize)> {
+        let pat = match self.mode {
+            Mode::Command { search: true } if self.incsearch && !self.cmdline.is_empty() => self.cmdline.clone(),
+            Mode::Confirm => {
+                return self.confirm.as_ref().and_then(|c| c.matches.first()).map(|&(r, c, l)| vec![(pos(r, c), l)]).unwrap_or_default();
+            }
+            _ if self.hlsearch => match &self.last_search {
+                Some(p) => p.clone(),
+                None => return Vec::new(),
+            },
+            _ => return Vec::new(),
+        };
+        self.all_hits(&pat, false).into_iter().filter(|(_, l)| *l > 0).collect()
+    }
+
+    /// `:set` with one or more options (vimtutor 6.5).
+    fn set_options(&mut self, arg: &str) -> Outcome {
+        let mut shown = Vec::new();
+        for opt in arg.split_whitespace() {
+            let (name, on) = match opt.strip_prefix("no") {
+                Some(rest) if !rest.is_empty() => (rest, false),
+                _ => (opt, true),
+            };
+            let (name, on, query) = match name.strip_suffix('!') {
+                Some(n) => (n, None, false),
+                None => match name.strip_suffix('?') {
+                    Some(n) => (n, Some(on), true),
+                    None => (name, Some(on), false),
+                },
+            };
+            let flag = match name {
+                "ic" | "ignorecase" => &mut self.ignorecase,
+                "scs" | "smartcase" => &mut self.smartcase,
+                "hls" | "hlsearch" => &mut self.hlsearch,
+                "is" | "incsearch" => &mut self.incsearch,
+                _ => return Outcome::Bell(format!("E518: Unknown option: {opt}")),
+            };
+            if query {
+                shown.push(format!("{}{name}", if *flag { "" } else { "no" }));
+            } else {
+                *flag = on.unwrap_or(!*flag);
+            }
+        }
+        if arg.trim().is_empty() {
+            let f = |on: bool, n: &str| format!("{}{n}", if on { "" } else { "no" });
+            return Outcome::Info(format!(
+                "{}  {}  {}  {}",
+                f(self.ignorecase, "ignorecase"),
+                f(self.smartcase, "smartcase"),
+                f(self.hlsearch, "hlsearch"),
+                f(self.incsearch, "incsearch")
+            ));
+        }
+        if shown.is_empty() { Outcome::Ok } else { Outcome::Info(shown.join("  ")) }
+    }
+
+    /// A pretend shell for `:!cmd` and `:r !cmd` (vimtutor 5.1, 5.5).
+    fn shell(&self, cmd: &str) -> Result<String, String> {
+        let mut words = cmd.split_whitespace();
+        let name = words.next().ok_or("E471: Argument required")?;
+        let rest: Vec<&str> = words.collect();
+        match name {
+            "ls" | "dir" => Ok(self.files.keys().cloned().collect::<Vec<_>>().join("\n")),
+            "cat" | "type" => rest
+                .iter()
+                .map(|f| self.files.get(*f).cloned().ok_or(format!("cat: {f}: No such file")))
+                .collect::<Result<Vec<_>, _>>()
+                .map(|t| t.join("\n")),
+            "echo" => Ok(rest.join(" ")),
+            "pwd" => Ok("/archipelago".into()),
+            "date" => Ok("Thu Nov 19 09:00:00 UTC 2026".into()),
+            "whoami" => Ok("wisp".into()),
+            _ => Err(format!("{name}: command not found (try ls, cat, echo, pwd, date)")),
+        }
+    }
+
+    /// Tab completes the command line; Ctrl-d lists the choices (vimtutor 7.3).
+    fn complete(&mut self, list: bool) -> Outcome {
+        if !list
+            && let Some((choices, at, head)) = &mut self.completion {
+                // Tab again: the next choice.
+                *at = (*at + 1) % choices.len();
+                self.cmdline = format!("{head}{}", choices[*at]);
+                return Outcome::Ok;
+            }
+        let line = self.cmdline.clone();
+        let (head, word, choices): (String, String, Vec<String>) = match line.rfind(' ') {
+            Some(sp) => {
+                let (head, word) = (&line[..=sp], &line[sp + 1..]);
+                let cmd = head.trim().trim_start_matches(|c: char| !c.is_ascii_alphabetic() && c != '!');
+                let names: Vec<String> = if cmd.starts_with("se") {
+                    OPTIONS.iter().map(|s| s.to_string()).collect()
+                } else {
+                    self.files.keys().cloned().collect()
+                };
+                (head.to_string(), word.to_string(), names)
+            }
+            None => {
+                // The command name, after any range.
+                let start = line.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(line.len());
+                (line[..start].to_string(), line[start..].to_string(), EX_NAMES.iter().map(|s| s.to_string()).collect())
+            }
+        };
+        let found: Vec<String> = choices.into_iter().filter(|c| c.starts_with(&word)).collect();
+        if found.is_empty() {
+            return Outcome::Bell("No match".into());
+        }
+        if list {
+            return Outcome::Info(found.join("  "));
+        }
+        self.cmdline = format!("{head}{}", found[0]);
+        if found.len() > 1 {
+            self.completion = Some((found, 0, head));
+        } else if !line.contains(' ') && !matches!(found[0].as_str(), "nohlsearch" | "quit" | "wq" | "sort" | "join" | "delete") {
+            self.cmdline.push(' ');
+        }
+        Outcome::Ok
+    }
+
+    /// `:s///c`: finds the matches and asks about the first.
+    fn start_confirm(&mut self, a: usize, b: usize, pat: &str, rep: &str, global: bool) -> Outcome {
+        let icase = self.icase(pat);
+        let mut matches = Vec::new();
+        for row in a..=b.min(self.lines.len() - 1) {
+            let mut hits = find_all(pat, &self.lines[row], icase);
+            if !global {
+                hits.truncate(1);
+            }
+            matches.extend(hits.into_iter().filter(|(_, l)| *l > 0).map(|(c, l)| (row, c, l)));
+        }
+        let Some(&(row, col, _)) = matches.first() else { return Outcome::Bell(format!("Pattern not found: {pat}")) };
+        self.snapshot_force();
+        self.confirm = Some(ConfirmSub { matches, rep: rep.to_string() });
+        self.mode = Mode::Confirm;
+        self.cursor = pos(row, col);
+        Outcome::Info(self.confirm_prompt())
+    }
+
+    pub fn confirm_prompt(&self) -> String {
+        let rep = self.confirm.as_ref().map_or("", |c| c.rep.as_str());
+        format!("replace with {rep} (y/n/a/q/l)?")
+    }
+
+    fn confirm_key(&mut self, key: Key) -> Outcome {
+        let Some(mut c) = self.confirm.take() else {
+            self.mode = Mode::Normal;
+            return Outcome::Ok;
+        };
+        let answer = match key {
+            Key::Char(ch @ ('y' | 'n' | 'a' | 'q' | 'l')) => ch,
+            Key::Esc => 'q',
+            _ => {
+                self.confirm = Some(c);
+                return Outcome::Bell("Answer y, n, a, q or l".into());
+            }
+        };
+        let replace_one = |e: &mut Editor, c: &mut ConfirmSub| {
+            let (row, col, len) = c.matches.remove(0);
+            let matched: Vec<char> = e.lines[row][col..col + len].to_vec();
+            let mut new = Vec::new();
+            let mut chars = c.rep.chars();
+            while let Some(ch) = chars.next() {
+                match ch {
+                    '&' => new.extend_from_slice(&matched),
+                    '\\' => new.push(chars.next().unwrap_or('\\')),
+                    ch => new.push(ch),
+                }
+            }
+            let delta = new.len() as i64 - len as i64;
+            e.lines[row].splice(col..col + len, new);
+            for m in c.matches.iter_mut().filter(|m| m.0 == row && m.1 > col) {
+                m.1 = (m.1 as i64 + delta) as usize;
+            }
+            e.changed();
+        };
+        match answer {
+            'y' => replace_one(self, &mut c),
+            'l' => {
+                replace_one(self, &mut c);
+                c.matches.clear();
+            }
+            'a' => {
+                while !c.matches.is_empty() {
+                    replace_one(self, &mut c);
+                }
+            }
+            'n' => {
+                c.matches.remove(0);
+            }
+            _ => c.matches.clear(),
+        }
+        match c.matches.first() {
+            Some(&(row, col, _)) => {
+                self.cursor = pos(row, col);
+                self.confirm = Some(c);
+                Outcome::Info(self.confirm_prompt())
+            }
+            None => {
+                self.mode = Mode::Normal;
+                self.clamp();
+                Outcome::Ok
+            }
+        }
+    }
+}
+
 fn mul_counts(a: Option<usize>, b: Option<usize>) -> Option<usize> {
     match (a, b) {
         (None, None) => None,
@@ -2678,7 +3144,9 @@ fn mul_counts(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 
 /// Whether `pat` matches `line` at `col`, and how long the match is. A
 /// pattern is literal text, anchored by a leading `^` or a trailing `$`.
-pub fn match_at(pat: &str, line: &[char], col: usize) -> Option<usize> {
+pub fn match_at(pat: &str, line: &[char], col: usize, icase: bool) -> Option<usize> {
+    // `\c` and `\C` only set the case (the caller read them).
+    let pat: &str = &pat.replace(r"\c", "").replace(r"\C", "");
     let (start, body) = match pat.strip_prefix('^') {
         Some(b) => (true, b),
         None => (false, pat),
@@ -2712,7 +3180,11 @@ pub fn match_at(pat: &str, line: &[char], col: usize) -> Option<usize> {
             want.push(c);
         }
     }
-    if col + want.len() > line.len() || line[col..col + want.len()] != want[..] {
+    if col + want.len() > line.len() {
+        return None;
+    }
+    let same = |a: char, b: char| a == b || icase && a.to_lowercase().eq(b.to_lowercase());
+    if !line[col..col + want.len()].iter().zip(&want).all(|(a, b)| same(*a, *b)) {
         return None;
     }
     if end && col + want.len() != line.len() {
@@ -2725,11 +3197,11 @@ pub fn match_at(pat: &str, line: &[char], col: usize) -> Option<usize> {
 }
 
 /// The non-overlapping matches of `pat` in `line`, as `:s` and `:g` see them.
-pub fn find_all(pat: &str, line: &[char]) -> Vec<(usize, usize)> {
+pub fn find_all(pat: &str, line: &[char], icase: bool) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     let mut col = 0;
     while col <= line.len() {
-        match match_at(pat, line, col) {
+        match match_at(pat, line, col, icase) {
             Some(len) => {
                 out.push((col, len));
                 col += len.max(1);
@@ -3065,6 +3537,117 @@ mod tests {
         assert_eq!(run("a\nb", pos(0, 0), ":%><CR>").text(), "    a\n    b");
         // One undo step for the whole command.
         assert_eq!(run("x1\ny\nx2", pos(0, 0), ":g/x/d<CR>u").text(), "x1\ny\nx2");
+    }
+
+    #[test]
+    fn backward_search_and_jumps() {
+        let t = "cat\ndog\ncat\nbird";
+        assert_eq!(run(t, pos(3, 0), "?cat<CR>").cursor, pos(2, 0));
+        // n keeps going backward, N turns around.
+        assert_eq!(run(t, pos(3, 0), "?cat<CR>n").cursor, pos(0, 0));
+        assert_eq!(run(t, pos(3, 0), "?cat<CR>nN").cursor, pos(2, 0));
+        assert_eq!(run(t, pos(0, 0), "#").cursor, pos(2, 0));
+        // Ctrl-o goes back through jumps, Ctrl-i (Tab) forward again.
+        assert_eq!(run(t, pos(0, 0), "G<C-o>").cursor, pos(0, 0));
+        assert_eq!(run(t, pos(0, 0), "G<C-o><Tab>").cursor, pos(3, 0));
+        // As in vim, the line you leave replaces its older entry.
+        assert_eq!(run(t, pos(0, 0), "/bird<CR>gg<C-o><C-o>").cursor, pos(3, 0));
+        assert_eq!(run(t, pos(0, 0), "/bird<CR>gg<C-o><Tab>").cursor, pos(0, 0));
+        assert_eq!(run(t, pos(0, 0), "/bird<CR>gg<C-o>").cursor, pos(3, 0));
+        assert_eq!(run(t, pos(0, 0), ":3<CR><C-o>").cursor, pos(0, 0));
+        let mut e = run(t, pos(1, 1), "");
+        assert_eq!(e.feed(Key::CtrlG), Outcome::Info("\"isle\" 4 lines --50%-- line 2 of 4, col 2".into()));
+    }
+
+    #[test]
+    fn undo_line() {
+        assert_eq!(run("abc def", pos(0, 0), "xxwx").text(), "c ef");
+        assert_eq!(run("abc def", pos(0, 0), "xxwxU").text(), "abc def");
+        // U is itself a change: u undoes it, and U again redoes the line.
+        assert_eq!(run("abc def", pos(0, 0), "xxwxUu").text(), "c ef");
+        assert_eq!(run("abc def", pos(0, 0), "xxwxUU").text(), "c ef");
+        // Only the last changed line.
+        assert_eq!(run("ab\ncd", pos(0, 0), "xjxU").text(), "b\ncd");
+    }
+
+    #[test]
+    fn substitute_with_confirmation() {
+        let e = run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>yny");
+        assert_eq!(e.text(), "dog cat dog");
+        assert_eq!(e.mode, Mode::Normal);
+        assert_eq!(run("cat cat\ncat", pos(0, 0), ":%s/cat/dog/gc<CR>na").text(), "cat dog\ndog");
+        assert_eq!(run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>l").text(), "dog cat cat");
+        assert_eq!(run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>yq").text(), "dog cat cat");
+        assert_eq!(run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>yyqu").text(), "cat cat cat");
+        let mut e = run("cat", pos(0, 0), "");
+        let out = e.feed_all_last(&parse_keys(":s/cat/dog/c<CR>"));
+        assert_eq!(out, Outcome::Info("replace with dog (y/n/a/q/l)?".into()));
+    }
+
+    #[test]
+    fn files_and_shell() {
+        let mut e = Editor::new("# list\nkeep");
+        e.files.insert("fruit.txt".into(), "apple\npear".into());
+        e.feed_all(&parse_keys(":r fruit.txt<CR>"));
+        assert_eq!(e.text(), "# list\napple\npear\nkeep");
+        e.feed_all(&parse_keys(":2,3w basket.txt<CR>"));
+        assert_eq!(e.files.get("basket.txt").map(String::as_str), Some("apple\npear"));
+        e.feed_all(&parse_keys("G:r !ls<CR>"));
+        assert_eq!(e.text(), "# list\napple\npear\nkeep\nbasket.txt\nfruit.txt");
+        let out = e.feed_all_last(&parse_keys(":!echo hi there<CR>"));
+        assert_eq!(out, Outcome::Info("hi there".into()));
+        // Visual lines, then :w writes just them.
+        let mut e = Editor::new("a\nb\nc");
+        e.feed_all(&parse_keys("jVj:w part.txt<CR>"));
+        assert_eq!(e.files.get("part.txt").map(String::as_str), Some("b\nc"));
+        assert!(matches!(run("x", pos(0, 0), "").feed_all_last(&parse_keys(":r nope<CR>")), Outcome::Bell(_)));
+    }
+
+    #[test]
+    fn search_options() {
+        let t = "Gold gold GOLD";
+        assert_eq!(run(t, pos(0, 0), "/gold<CR>n").cursor, pos(0, 5));
+        assert_eq!(run(t, pos(0, 0), ":set ic<CR>/gold<CR>").cursor, pos(0, 5));
+        assert_eq!(run(t, pos(0, 0), ":set ic<CR>/gold<CR>n").cursor, pos(0, 10));
+        assert_eq!(run(t, pos(0, 0), ":set ic noic<CR>/gold<CR>n").cursor, pos(0, 5));
+        assert_eq!(run(t, pos(0, 0), "/gold\\c<CR>").cursor, pos(0, 5));
+        assert_eq!(run(t, pos(0, 0), "/gold\\c<CR>n").cursor, pos(0, 10));
+        // smartcase: a capital in the pattern makes it exact again.
+        assert_eq!(run(t, pos(0, 0), ":set ic scs<CR>/GOLD<CR>").cursor, pos(0, 10));
+        let e = run(t, pos(0, 0), ":set hls<CR>/gold<CR>");
+        assert_eq!(e.search_highlights(), vec![(pos(0, 5), 4)]);
+        assert!(run(t, pos(0, 0), ":set hls<CR>/gold<CR>:noh<CR>").search_highlights().is_empty());
+        // incsearch lights up matches while the pattern is typed.
+        let e = run(t, pos(0, 0), ":set is ic<CR>/go");
+        assert_eq!(e.search_highlights().len(), 3);
+        assert_eq!(run(t, pos(0, 0), ":%s/gold/x/g<CR>").text(), "Gold x GOLD");
+        assert_eq!(run(t, pos(0, 0), ":set ic<CR>:%s/gold/x/g<CR>").text(), "x x x");
+    }
+
+    #[test]
+    fn command_line_completion() {
+        let mut e = Editor::new("x");
+        e.files.insert("recipe.txt".into(), "r".into());
+        e.files.insert("readme.txt".into(), "m".into());
+        e.feed_all(&parse_keys(":so<Tab>"));
+        assert_eq!(e.cmdline, "sort");
+        let mut e2 = e.clone();
+        e2.feed(Key::Esc);
+        e2.feed_all(&parse_keys(":r rec<Tab>"));
+        assert_eq!(e2.cmdline, "r recipe.txt");
+        let mut e3 = Editor::new("x");
+        e3.files = e.files.clone();
+        e3.feed_all(&parse_keys(":r re<Tab>"));
+        assert_eq!(e3.cmdline, "r readme.txt");
+        e3.feed(Key::Tab);
+        assert_eq!(e3.cmdline, "r recipe.txt");
+        let mut e4 = Editor::new("x");
+        e4.files = e.files.clone();
+        let out = e4.feed_all_last(&parse_keys(":r re<C-d>"));
+        assert_eq!(out, Outcome::Info("readme.txt  recipe.txt".into()));
+        let mut e5 = Editor::new("x");
+        e5.feed_all(&parse_keys(":set hl<Tab>"));
+        assert_eq!(e5.cmdline, "set hlsearch");
     }
 
     #[test]

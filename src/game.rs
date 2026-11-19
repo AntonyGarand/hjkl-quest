@@ -51,6 +51,10 @@ pub fn key_name(c: char) -> String {
         Key::CtrlX => "Ctrl-x".into(),
         Key::CtrlV => "Ctrl-v".into(),
         Key::CtrlR => "Ctrl-r".into(),
+        Key::CtrlO => "Ctrl-o".into(),
+        Key::CtrlG => "Ctrl-g".into(),
+        Key::CtrlD => "Ctrl-d".into(),
+        Key::Tab => "Tab".into(),
         other => other.to_string(),
     }
 }
@@ -72,7 +76,8 @@ pub fn stars(keys: usize, par: usize) -> u8 {
 impl Session {
     pub fn new(index: usize) -> Self {
         let level = &LEVELS[index];
-        let editor = Editor::new(level.text()).with_cursor(level.start());
+        let mut editor = Editor::new(level.text()).with_cursor(level.start());
+        editor.files = level.files().iter().map(|(n, t)| (n.to_string(), t.to_string())).collect();
         let mut session = Session {
             index,
             editor,
@@ -110,6 +115,7 @@ impl Session {
     /// Whether the buffer still differs from the goal.
     pub fn goal_met(&self) -> bool {
         self.level().goal_text().is_none_or(|g| self.editor.text() == g)
+            && self.level().want_files().iter().all(|(n, t)| self.editor.files.get(*n).is_some_and(|f| f == t))
     }
 
     fn is_allowed(&self, key: Key) -> Result<(), char> {
@@ -177,7 +183,7 @@ impl Session {
             let cmd = self.editor.cmdline.clone();
             self.editor.feed(Key::Esc);
             self.drop_cmdline_keys();
-            self.message = format!(":{cmd} needs ex commands, learned on isle 19. Try :e! :q :n :mute");
+            self.message = format!(":{cmd} needs ex commands, learned on isle {}. Try :e! :q :n :h :mute", crate::levels::ex_isle());
             return Event::Locked(':');
         }
         self.keys.push(key);
@@ -225,6 +231,16 @@ impl Session {
             Outcome::Bell(msg) => {
                 self.message = msg;
                 Event::Bell
+            }
+            Outcome::Info(msg) => {
+                self.message = msg;
+                if self.editor.revision != revision {
+                    Event::Edited
+                } else if self.editor.cursor != cursor {
+                    Event::Moved
+                } else {
+                    Event::None
+                }
             }
             Outcome::Command(cmd) => {
                 // The game's own commands: none of their keys count.
@@ -347,7 +363,7 @@ mod tests {
         assert_eq!(s.keys.len(), 1);
         assert_eq!(s.editor.mode, Mode::Normal);
         // Once learned, ex keys count as in vim golf.
-        let mut s = Session::new(18);
+        let mut s = Session::new(crate::levels::ex_isle() - 1);
         for k in parse_keys(":%s/foo/baz/g<CR>") {
             s.press(k);
         }
@@ -357,8 +373,8 @@ mod tests {
 
     #[test]
     fn a_wrong_edit_can_always_be_undone() {
-        // Chomp (isle 11) comes before undo's own isle.
-        let mut s = Session::new(10);
+        // Chomp comes before undo's own isle.
+        let mut s = Session::new(LEVELS.iter().position(|l| l.title == "Chomp").unwrap());
         let before = s.editor.text();
         assert_eq!(s.press(Key::Char('x')), Event::Edited);
         assert_ne!(s.editor.text(), before);

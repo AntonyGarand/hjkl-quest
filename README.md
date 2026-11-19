@@ -1,6 +1,6 @@
 # HJKL Quest
 
-Learn vim by walking the **Buffer Archipelago**: thirty-five floating isles, each made of text, each teaching a few
+Learn vim by walking the **Buffer Archipelago**: forty floating isles, each made of text, each teaching a few
 commands. The world *is* the buffer: every character is a tile, the cursor is a small wisp that hops between
 them, and every command you learn moves you (or reshapes the land) exactly as it would in vim.
 
@@ -36,19 +36,29 @@ native desktop app on Windows, macOS and Linux.
 
 | Chapter | Commands |
 |---|---|
-| I · The Meadow | `h j k l`, counts |
+| I · The Meadow | `h j k l`, counts, `:q! :wq` |
 | II · The Word Bridges | `w b e`, `W B E`, `0 ^ $` |
 | III · The Tower | `gg G {n}G`, `f F t T ; ,`, `{ }` |
-| IV · The Machine | `%`, `/ n N * #` |
-| V · The Workshop | `x X r`, `u Ctrl-r` (from here on), `d{motion} dd D`, `c{motion} C s S` |
+| IV · The Machine | `%`, `/ ? n N * #`, `Ctrl-o Ctrl-i Ctrl-g` |
+| V · The Workshop | `x X r`, `u U Ctrl-r` (undo from here on), `d{motion} dd D`, `c{motion} C s S` |
 | VI · The Library | `i a I A o O`, `y yy p P`, `.` |
 | VII · The Observatory | text objects `iw aw i( a( i" …`, visual `v V`, `~ U u J` |
-| VIII · The Summit | `:s`, `:%s///g`, `:{n}`, and a final refactor |
-| IX · The Vaults | registers `"a "0 "_ "A`, marks `ma `` `a 'a `` |
-| X · The Clockwork | `Ctrl-a Ctrl-x`, macros `qa … q @a @@` |
-| XI · The Terraces | `>> << >{motion}`, `gU gu g~`, replace mode `R` |
-| XII · The Glacier | visual block `Ctrl-v` with `I A $A c`, `gn cgn` with `.`, `it at ip ap` |
-| XIII · The Archive | `:g :v`, ranges `:4,6m0 :$t0 :'<,'>`, `:norm`, `:sort`, and a grand refactor |
+| VIII · The Summit | `:s`, `:%s///g`, `:{n}`, `:set ic hls is`, `\c`, `:noh`, `:s///gc`, and a refactor |
+| IX · The Scriptorium | `:r FILE`, `:w FILE`, `v` + `:w`, `:r !ls`, `:!cmd`, `Tab`/`Ctrl-d` completion |
+| X · The Vaults | registers `"a "0 "_ "A`, marks `ma `` `a 'a `` |
+| XI · The Clockwork | `Ctrl-a Ctrl-x`, macros `qa … q @a @@` |
+| XII · The Terraces | `>> << >{motion}`, `gU gu g~`, replace mode `R` |
+| XIII · The Glacier | visual block `Ctrl-v` with `I A $A c`, `gn cgn` with `.`, `it at ip ap` |
+| XIV · The Archive | `:g :v`, ranges `:4,6m0 :$t0 :'<,'>`, `:norm`, `:sort`, and a grand refactor |
+
+### Everything vimtutor teaches
+
+Every command from `vimtutor`'s seven lessons has an isle: movement and `:q!` (1), `x i A` (1), `dw d$ dd`,
+counts, `u U Ctrl-r` (2), `p r ce c$` (3), `Ctrl-g G gg / ? n N Ctrl-o Ctrl-i % :s :%s :s///gc` (4),
+`:!cmd :w FILE v+:w :r FILE :r !ls` (5), `o O a e R y p :set ic is hls \c` (6) and command-line completion with
+`Tab` and `Ctrl-d` (7). Files and the shell are simulated: each isle has a small shelf of files, and `:!` knows
+`ls cat echo pwd date`. Two things don't fit a game: the real `:help` (`:h` reopens the isle's lessons instead)
+and a `~/.vimrc`.
 
 ## Run it
 
