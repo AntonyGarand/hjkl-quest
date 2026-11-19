@@ -94,12 +94,12 @@ pub static LEVELS: &[Level] = &[
     Level {
         chapter: "I · The Meadow",
         title: "Counting Sheep",
-        story: "The meadow stretches far, and someone hid traps in the grass. Stepping \
-                one tile at a time is slow, and lands on them. Say how many steps you want first.",
+        story: "The meadow stretches far, and spiked blocks stand in the grass. Stepping \
+                one tile at a time runs into them. Say how many steps you want, and leap over.",
         teaches: &[
             ("{n}l", "a count repeats a motion: 5l moves five right"),
             ("3j", "three lines down"),
-            ("traps", "spikes ▲: never land on one. A count jumps clean over"),
+            ("traps", "spiked blocks: you can never land on one, but a count jumps clean over"),
         ],
         unlock: "123456789",
         map: "

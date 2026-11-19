@@ -19,8 +19,8 @@ native desktop app on Windows, macOS and Linux.
   (in place) or amber (missing), with a count of what's left to add and remove.
 - **Rulers** number the lines (with each line's distance from the cursor, for counts like `5j`) and the
   columns (every 5), so distances can be judged at a glance.
-- **Traps ▲** on the movement isles throw the wisp back if it *lands* on one: stepping `lllll` gets caught,
-  while `5l`, `e` or `f{c}` jump clean over. The keys still count.
+- **Traps**: spiked blocks on the movement isles that the cursor can never land on. A command that would end
+  on one simply doesn't happen (its keys still count), so `lllll` stops dead while `5l`, `e` or `f{c}` jump over.
 - **A habit coach** watches your commands and names the faster one you've already learned: `llll` → `4l` / `e`,
   `0i` → `I`, `$a` → `A`, `dwi` → `cw`, `d$` → `D`, `lh` (moves that cancel out)… The completion card lists the
   habits to break.

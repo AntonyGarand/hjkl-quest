@@ -372,7 +372,7 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                 KeyframeTiming::new(220.0),
             );
         }
-        Event::Trapped(p) => {
+        Event::Blocked(p) => {
             audio::play(Sfx::Locked, 0.6);
             audio::play(Sfx::Bell, 0.4);
             let (cx, cy) = tile_center(*p);
@@ -519,7 +519,7 @@ fn draw_world(session: &Session) -> Painter {
     }
 
     for &t in &session.traps {
-        painter = draw_trap(painter, t);
+        painter = draw_trap(painter, t, e.char_at(t));
     }
 
     let (Some(diff), Some(goal)) = (diff, goal) else { return painter };
@@ -558,33 +558,75 @@ fn draw_world(session: &Session) -> Painter {
 }
 
 /// A trap: a dark plate with three spikes, red at the tips.
-/// The tile itself is tinted (TileLook::Trap); spikes stand at its edges
-/// so the letter on it stays readable.
-fn draw_trap(painter: Painter, p: Pos) -> Painter {
+/// How far a trap rises above the tiles.
+const LIFT: f32 = 16.0;
+const TRAP: u32 = 0x7a3442;
+fn trap_top() -> Hsla {
+    shade(TRAP, 1.15)
+}
+
+/// A trap: a raised block of dark stone, spiked along its back edge, that
+/// the cursor can never stand on. Its letter stays on top, for f and t.
+fn draw_trap(painter: Painter, p: Pos, c: Option<char>) -> Painter {
     let (x, y) = tile_origin(p);
-    let (cx, cy) = (x + CW / 2.0 + SKEW / 2.0, y + CH / 2.0);
-    let mut painter = painter;
-    for (dx, dy) in [(-14.0, 2.0), (14.0, 2.0), (-10.0, -7.0), (10.0, -7.0)] {
-        let (bx, by) = (cx + dx, cy + dy + 5.0);
+    let yt = y - LIFT;
+    let mut painter = painter
+        // Left side and front, from the raised top down to the tile.
+        .fill_color(shade(TRAP, 0.45))
+        .begin_path()
+        .move_to(x, yt + CH)
+        .line_to(x + SKEW, yt)
+        .line_to(x + SKEW, y)
+        .line_to(x, y + CH)
+        .close_path()
+        .fill()
+        .fill_color(shade(TRAP, 0.62))
+        .fill_rect(x, yt + CH, CW, LIFT)
+        .fill_color(trap_top())
+        .begin_path()
+        .move_to(x + SKEW, yt)
+        .line_to(x + SKEW + CW, yt)
+        .line_to(x + CW, yt + CH)
+        .line_to(x, yt + CH)
+        .close_path()
+        .fill()
+        .stroke_color(hexa(0xff6b6b, 0.55))
+        .line_width(1.2)
+        .stroke();
+    // Spikes along the back edge.
+    for k in 0..4 {
+        let bx = x + SKEW + 6.0 + k as f32 * 9.5;
+        let by = yt + 3.0;
         painter = painter
-            .fill_color(hex(0xb9c2d6))
+            .fill_color(hex(0xc3cbdd))
             .begin_path()
-            .move_to(bx - 3.0, by)
-            .line_to(bx, by - 10.0)
-            .line_to(bx + 3.0, by)
+            .move_to(bx - 3.5, by)
+            .line_to(bx, by - 11.0)
+            .line_to(bx + 3.5, by)
             .close_path()
             .fill()
-            .fill_color(hex(0x6c7690))
+            .fill_color(hex(0x737d97))
             .begin_path()
             .move_to(bx, by)
-            .line_to(bx, by - 10.0)
-            .line_to(bx + 3.0, by)
+            .line_to(bx, by - 11.0)
+            .line_to(bx + 3.5, by)
             .close_path()
             .fill()
             .fill_color(hex(0xff4d4d))
             .begin_path()
-            .arc(bx, by - 9.5, 1.3, 0.0, TAU)
+            .arc(bx, by - 10.5, 1.3, 0.0, TAU)
             .fill();
+    }
+    if let Some(ch) = c.filter(|c| !matches!(c, ' ' | '.')) {
+        let (cx, cy) = (x + CW / 2.0 + SKEW / 2.0, yt + CH / 2.0 + 2.0);
+        painter = painter
+            .font("700 19px monospace")
+            .text_align(CanvasTextAlign::Center)
+            .text_baseline(CanvasTextBaseline::Middle)
+            .fill_color(hexa(0x000000, 0.4))
+            .fill_text(&ch.to_string(), cx + 1.0, cy + 1.5)
+            .fill_color(hex(0xffe4e0))
+            .fill_text(&ch.to_string(), cx, cy + 0.5);
     }
     painter
 }
@@ -729,7 +771,7 @@ impl TileLook {
             TileLook::Plank => WOOD,
             TileLook::Wrong => EMBER,
             TileLook::Selected => SELECT,
-            TileLook::Trap => 0x6b2f3c,
+            TileLook::Trap => TRAP,
         }
     }
 }
@@ -1910,7 +1952,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         let (index, keys, stars, par) = session_value(|s| (s.index, format_keys(&s.keys), s.stars(), s.par())).unwrap();
         let level = &LEVELS[index];
         let count = session_value(|s| s.keys.len()).unwrap();
-        let (habits, trapped) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.trapped)).unwrap();
+        let (habits, blocked) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.blocked)).unwrap();
         let last = index + 1 == LEVELS.len();
         let verdict = if count < par {
             "Under par! You beat the golf solution."
@@ -1957,15 +1999,15 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .child(text(format!("GOLF SOLUTION · {par}")).text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)).mt(px(8.0)))
                                 .child(spoiler(format_keys(&vim::parse_keys(level.solution)))),
                         )
-                        .child((!habits.is_empty() || trapped > 0).then(|| {
+                        .child((!habits.is_empty() || blocked > 0).then(|| {
                             view()
                                 .w_full()
                                 .gap_1()
                                 .mt(px(4.0))
                                 .child(text("HABITS TO BREAK").text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)))
                                 .children(habits.into_iter().take(4).map(|h| text(format!("• {h}")).font_family(MONO).text_size(px(13.0)).text_color(hex(0xffd76b))))
-                                .child((trapped > 0).then(|| {
-                                    text(format!("• caught by a trap {trapped}×: land only where you aim"))
+                                .child((blocked > 0).then(|| {
+                                    text(format!("• blocked by a trap {blocked}×: aim past it in one move"))
                                         .text_size(px(13.0))
                                         .text_color(hex(0xff8a70))
                                 }))

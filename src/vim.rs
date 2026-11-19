@@ -300,7 +300,13 @@ impl Editor {
         self
     }
 
-    /// Puts the cursor back somewhere (a trap throws it back).
+    /// Drops a half-typed command (its count, operator...).
+    pub fn cancel_pending(&mut self) {
+        self.pending.clear();
+        self.recording = None;
+    }
+
+    /// Puts the cursor back somewhere.
     pub fn set_cursor(&mut self, at: Pos) {
         self.cursor = at;
         self.clamp();
