@@ -802,7 +802,7 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
         worldmap::follow(ui, motion, !scene_changed);
     }
     place_hero(ui, motion, !scene_changed);
-    // A trap: the wisp hops up onto the block, and is flung back.
+    // A trap: the wisp hops onto the spikes, and is flung back.
     if let Event::Trapped(p) = &event
         && let Some(at) = session_value(|s| s.editor.cursor)
     {
@@ -813,9 +813,9 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
         motion.hop.keyframes(
             [
                 Keyframe::new(0.0),
-                Keyframe::at(0.25, -LIFT - 10.0).ease(Easing::EaseOut),
-                Keyframe::at(0.4, -LIFT).ease(Easing::EaseIn),
-                Keyframe::at(0.7, -LIFT - 18.0).ease(Easing::EaseOut),
+                Keyframe::at(0.25, -LIFT).ease(Easing::EaseOut),
+                Keyframe::at(0.4, 0.0).ease(Easing::EaseIn),
+                Keyframe::at(0.7, -LIFT - 8.0).ease(Easing::EaseOut),
                 Keyframe::new(0.0).ease(Easing::EaseIn),
             ],
             timing(),
@@ -984,68 +984,53 @@ fn draw_world(session: &Session) -> Painter {
     painter
 }
 
-/// A trap: a dark plate with three spikes, red at the tips.
-/// How far a trap rises above the tiles.
+/// How high the wisp hops when a trap throws it back.
 const LIFT: f32 = 16.0;
 const TRAP: u32 = 0x7a3442;
 fn trap_top() -> Hsla {
     shade(TRAP, 1.15)
 }
 
-/// A trap: a raised block of dark stone, spiked along its back edge, that
-/// the cursor can never stand on. Its letter stays on top, for f and t.
+/// A trap: a flat plate of dark red stone, level with the tiles so it
+/// hides nothing behind it, with a row of small spikes along its front
+/// edge. The cursor can never stand on it. Its letter stays readable, for
+/// f and t.
 fn draw_trap(painter: Painter, p: Pos, c: Option<char>) -> Painter {
     let (x, y) = tile_origin(p);
-    let yt = y - LIFT;
     let mut painter = painter
-        // Left side and front, from the raised top down to the tile.
-        .fill_color(shade(TRAP, 0.45))
+        .fill_color(trap_top())
         .begin_path()
-        .move_to(x, yt + CH)
-        .line_to(x + SKEW, yt)
-        .line_to(x + SKEW, y)
+        .move_to(x + SKEW, y)
+        .line_to(x + SKEW + CW, y)
+        .line_to(x + CW, y + CH)
         .line_to(x, y + CH)
         .close_path()
         .fill()
-        .fill_color(shade(TRAP, 0.62))
-        .fill_rect(x, yt + CH, CW, LIFT)
-        .fill_color(trap_top())
-        .begin_path()
-        .move_to(x + SKEW, yt)
-        .line_to(x + SKEW + CW, yt)
-        .line_to(x + CW, yt + CH)
-        .line_to(x, yt + CH)
-        .close_path()
-        .fill()
-        .stroke_color(hexa(0xff6b6b, 0.55))
-        .line_width(1.2)
+        .stroke_color(hexa(0xff6b6b, 0.7))
+        .line_width(1.4)
         .stroke();
-    // Spikes along the back edge.
-    for k in 0..4 {
-        let bx = x + SKEW + 6.0 + k as f32 * 9.5;
-        let by = yt + 3.0;
+    // Small spikes along the front edge, inside the tile.
+    for k in 0..5 {
+        let bx = x + 6.0 + k as f32 * 7.0;
+        let by = y + CH - 2.0;
         painter = painter
             .fill_color(hex(0xc3cbdd))
             .begin_path()
-            .move_to(bx - 3.5, by)
-            .line_to(bx, by - 11.0)
-            .line_to(bx + 3.5, by)
+            .move_to(bx - 2.5, by)
+            .line_to(bx, by - 6.0)
+            .line_to(bx + 2.5, by)
             .close_path()
             .fill()
             .fill_color(hex(0x737d97))
             .begin_path()
             .move_to(bx, by)
-            .line_to(bx, by - 11.0)
-            .line_to(bx + 3.5, by)
+            .line_to(bx, by - 6.0)
+            .line_to(bx + 2.5, by)
             .close_path()
-            .fill()
-            .fill_color(hex(0xff4d4d))
-            .begin_path()
-            .arc(bx, by - 10.5, 1.3, 0.0, TAU)
             .fill();
     }
     if let Some(ch) = c.filter(|c| !matches!(c, ' ' | '.')) {
-        let (cx, cy) = (x + CW / 2.0 + SKEW / 2.0, yt + CH / 2.0 + 2.0);
+        let (cx, cy) = (x + CW / 2.0 + SKEW / 2.0, y + CH / 2.0 - 2.0);
         painter = painter
             .font("700 19px monospace")
             .text_align(CanvasTextAlign::Center)
