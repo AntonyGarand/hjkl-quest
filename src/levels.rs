@@ -15,7 +15,7 @@ pub struct Level {
     /// The buffer: the island the player walks on.
     pub map: &'static str,
     /// An overlay of `map`: `@` the start, `*` a crystal to collect, `^` a
-    /// trap the cursor must jump over, never land on.
+    /// trap the cursor must jump over, never land on, `>` and `<` typo bugs.
     pub marks: &'static str,
     /// For editing levels, the text the buffer must become.
     pub goal: Option<&'static str>,
@@ -35,6 +35,12 @@ impl Level {
 
     pub fn traps(&self) -> Vec<Pos> {
         self.marked('^')
+    }
+
+    /// Typo bugs: `>` crawling right, `<` left.
+    pub fn bugs(&self) -> Vec<crate::game::Bug> {
+        let right = self.marked('>').into_iter().map(|at| crate::game::Bug { at, dir: 1 });
+        right.chain(self.marked('<').into_iter().map(|at| crate::game::Bug { at, dir: -1 })).collect()
     }
 
     /// The scrolls on the isle's shelf, for `:r`, `:!ls` and Tab.
@@ -283,6 +289,25 @@ go fetch the ball, bring it back, good dog!",
     },
     Level {
         chapter: "III · The Tower",
+        title: "Bug Hunt",
+        story: "Typo bugs! They crawl one tile per command, and every few commands they hatch twins. Don't chase them: work out where a bug will be, and land on it.",
+        teaches: &[
+            ("{n}f{c}", "the nth c on the line: 3fb"),
+            ("predict", "each command moves every bug one tile"),
+        ],
+        unlock: "",
+        map: "
+the bugs nibble at every letter here
+watch them crawl and time your jumps",
+        marks: "
+@...........>
+..............................<",
+        goal: None,
+        solution: "3fbjfu",
+        tip: "A bug moves after your command lands. Land where it is, not where it was.",
+    },
+    Level {
+        chapter: "III · The Tower",
         title: "Paragraph Isles",
         story: "Small isles float apart, joined by empty planks. Leap from one blank line \
                 to the next.",
@@ -393,6 +418,27 @@ sand",
         goal: None,
         solution: "?go<CR><C-o>$/si<CR>",
         tip: "Searches, G, gg, % and marks are jumps: Ctrl-o walks back through them, one by one.",
+    },
+    Level {
+        chapter: "IV · The Machine",
+        title: "Infestation",
+        story: "The machine's code is crawling with bugs, one per line, and each is heading for the word bug. A search lands on every match in turn: be there when they are.",
+        teaches: &[
+            ("/bug⏎ n", "jump from match to match, wherever they are"),
+            ("hatching", "every 8 commands each bug hatches a twin: be quick"),
+        ],
+        unlock: "",
+        map: "
+fix the bug in the parser
+then the bug in the lexer
+and the bug in the printer",
+        marks: "
+@.......>
+..........<
+......>",
+        goal: None,
+        solution: "/bug<CR>nn",
+        tip: "Each command moves every bug one tile. Count ahead: where will it be when you land?",
     },
     Level {
         chapter: "V · The Workshop",

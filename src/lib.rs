@@ -7,13 +7,21 @@
 
 pub mod audio;
 pub mod coach;
+pub mod daily;
 pub mod diff;
 pub mod examples;
 mod intro;
 pub mod game;
+pub mod grammar;
+pub mod hints;
 pub mod lessons;
 pub mod levels;
+mod replay;
+pub mod review;
+mod screens;
+pub mod story;
 pub mod vim;
+mod worldmap;
 
 use std::cell::RefCell;
 use std::f32::consts::TAU;
@@ -27,7 +35,7 @@ use nsh_core::prelude::*;
 
 use audio::Sfx;
 use game::{Event, Session};
-use levels::LEVELS;
+use levels::{LEVELS, Level};
 use vim::{Key, Mode, Pos, format_keys};
 
 /// The app's UI set (`nsh.json` `"rust"`).
@@ -94,16 +102,13 @@ fn noise(p: Pos) -> f32 {
 }
 
 const SKY_TOP: u32 = 0x0a0f24;
-const SKY_MID: u32 = 0x221a46;
-const SKY_LOW: u32 = 0x40285c;
-const GRASS: u32 = 0x4c8f57;
-const STONE: u32 = 0x5f6f93;
 const AMBER: u32 = 0x9a7440;
 const TEAL: u32 = 0x2f8a8f;
 const WOOD: u32 = 0x86603a;
 const EMBER: u32 = 0xc25a3f;
 const SELECT: u32 = 0x8a63e0;
 const GEM: u32 = 0x7ef3ff;
+const BUG: u32 = 0x8be04e;
 const GLYPH: u32 = 0xf6f1e3;
 
 fn mode_color(e: &vim::Editor) -> u32 {
@@ -122,6 +127,10 @@ fn mode_color(e: &vim::Editor) -> u32 {
 enum Screen {
     Menu { selected: usize },
     Play(Box<Session>),
+    /// The verb × noun grid, from the map.
+    Grammar { selected: usize },
+    /// A finished run played back beside the golf solution.
+    Replay(Box<replay::Replay>),
 }
 
 struct State {
@@ -133,6 +142,23 @@ struct State {
     intro: bool,
     /// Isles whose intro has been seen.
     seen: Vec<bool>,
+    /// Verb + noun pairs the player has used (`grammar::key`).
+    grammar: std::collections::BTreeSet<String>,
+    /// The fastest clear of each isle, in tenths of a second.
+    times: Vec<Option<u32>>,
+    /// When each isle was last cleared, counted in clears: what review
+    /// drills pick from.
+    practiced: Vec<u32>,
+    clears: u32,
+    /// The current run: when its first key came, and how long it took (ms).
+    started: Option<f64>,
+    took: Option<f64>,
+    /// How much was left to do when the isle opened: a boss's full health.
+    work_start: usize,
+    /// Drills to play after this one: (drill, the isle it's from).
+    drills: Vec<(&'static Level, usize)>,
+    /// The best clear of a daily puzzle: (day, keys).
+    daily_best: Option<(u64, usize)>,
 }
 
 impl State {
@@ -140,6 +166,36 @@ impl State {
     fn open(&mut self, i: usize) {
         self.screen = Screen::Play(Box::new(Session::new(i)));
         self.intro = !self.seen[i] && self.best[i].is_none();
+        self.drills.clear();
+        self.new_run();
+    }
+
+    /// Opens a daily puzzle or a drill, with the keys of isle `index`.
+    fn open_level(&mut self, level: &'static Level, index: usize) {
+        self.screen = Screen::Play(Box::new(Session::custom(level, index)));
+        self.intro = false;
+        self.new_run();
+    }
+
+    /// Plays the same isle, puzzle or drill again.
+    fn retry(&mut self, level: &'static Level, index: usize, campaign: bool) {
+        if campaign {
+            let drills = std::mem::take(&mut self.drills);
+            self.open(index);
+            self.intro = false;
+            self.drills = drills;
+        } else {
+            self.open_level(level, index);
+        }
+    }
+
+    fn new_run(&mut self) {
+        self.started = None;
+        self.took = None;
+        self.work_start = match &self.screen {
+            Screen::Play(s) => work(s),
+            _ => 0,
+        };
     }
 
     fn close_intro(&mut self) {
@@ -166,7 +222,85 @@ thread_local! {
         toast: String::new(),
         intro: false,
         seen: load_seen(),
+        grammar: Storage::get_item("hjkl-quest.grammar").map(|g| g.split('|').filter(|p| !p.is_empty()).map(String::from).collect()).unwrap_or_default(),
+        times: load_numbers("hjkl-quest.times").into_iter().map(|t| t.map(|t| t as u32)).collect(),
+        practiced: load_numbers("hjkl-quest.practiced").into_iter().map(|t| t.unwrap_or(0) as u32).collect(),
+        clears: Storage::get_item("hjkl-quest.clears").and_then(|c| c.parse().ok()).unwrap_or(0),
+        started: None,
+        took: None,
+        work_start: 0,
+        drills: Vec::new(),
+        daily_best: Storage::get_item("hjkl-quest.daily").and_then(|d| {
+            let (day, keys) = d.split_once('=')?;
+            Some((day.parse().ok()?, keys.parse().ok()?))
+        }),
     });
+}
+
+/// A number saved per isle (`title=value|…`).
+fn load_numbers(key: &str) -> Vec<Option<usize>> {
+    let mut out = vec![None; LEVELS.len()];
+    if let Some(saved) = Storage::get_item(key) {
+        for (t, v) in saved.split('|').filter_map(|e| e.split_once('=')) {
+            if let Some(i) = index_of(t) {
+                out[i] = v.parse().ok();
+            }
+        }
+    }
+    out
+}
+
+fn save_numbers(key: &str, values: impl Iterator<Item = Option<u32>>) {
+    save_entries(key, values.enumerate().filter_map(|(i, v)| v.map(|v| (i, v.to_string()))));
+}
+
+/// What's left to do on an isle: crystals, bugs, characters to fix.
+fn work(s: &Session) -> usize {
+    s.gems_left() + s.bugs.len() + session_diff(s).map_or(0, |d| d.wrong_count() + d.missing_count())
+}
+
+/// Whether the isle is its chapter's last: a boss guards it.
+fn is_boss(s: &Session) -> bool {
+    s.in_campaign() && (s.index + 1 == LEVELS.len() || LEVELS[s.index + 1].chapter != s.level().chapter)
+}
+
+/// The first isle not yet cleared: the ones after the next are in fog.
+fn frontier(best: &[Option<usize>]) -> usize {
+    best.iter().position(|b| b.is_none()).unwrap_or(best.len())
+}
+
+/// "1:05.3" from milliseconds.
+fn clock(ms: f64) -> String {
+    let tenths = (ms / 100.0) as u64;
+    format!("{}:{:02}.{}", tenths / 600, tenths / 10 % 60, tenths % 10)
+}
+
+fn now_ms() -> f64 {
+    nsh_core::time::unix_ms()
+}
+
+thread_local! {
+    /// The look of the chapter on screen, for the tiles and the sky.
+    static THEME: std::cell::Cell<story::Theme> = std::cell::Cell::new(story::CHAPTERS[0].theme);
+}
+
+fn theme() -> story::Theme {
+    THEME.with(|t| t.get())
+}
+
+/// Takes the look of the chapter on screen (the map's selected isle, or
+/// the isle being played).
+fn sync_theme(ui: Ui) {
+    let label = with_state(|s| match &s.screen {
+        Screen::Play(p) => p.level().chapter,
+        Screen::Replay(r) => r.session.level().chapter,
+        Screen::Menu { selected } | Screen::Grammar { selected } => LEVELS[*selected].chapter,
+    });
+    THEME.with(|t| t.set(story::theme(label)));
+    let index = story::CHAPTERS.iter().position(|c| story::chapter(label).is_some_and(|k| std::ptr::eq(k, c))).unwrap_or(0);
+    if ui.chapter.get_untracked() != index {
+        ui.chapter.set(index);
+    }
 }
 
 /// The menu, or with `HJKL_LEVEL=<n>` (desktop, for development) level n.
@@ -248,6 +382,12 @@ struct Motion {
     fly_y: AnimatedValue,
     drift: AnimatedValue,
     card: AnimatedValue,
+    /// Rain, snow and leaves falling: 0 to 1, looping.
+    fall: AnimatedValue,
+    /// A long jump's dust trail fading: 0 to 1.
+    trail: AnimatedValue,
+    /// A boss reeling from a hit.
+    boss: AnimatedValue,
 }
 
 #[derive(Clone, Copy)]
@@ -261,6 +401,12 @@ struct Ui {
     burst_at: Signal<(f32, f32)>,
     /// Steps the intro's examples along.
     beat: Signal<u64>,
+    /// The burst's colour: a crystal's, or a squashed bug's.
+    burst_color: Signal<u32>,
+    /// A long jump: where it started and ended, for the dust trail.
+    trail: Signal<((f32, f32), (f32, f32))>,
+    /// The chapter on screen, for the sky.
+    chapter: Signal<usize>,
 }
 
 // --------------------------------------------------------------------- keys
@@ -328,22 +474,86 @@ fn bind_keys(ui: Ui, motion: Rc<Motion>) {
     }
 }
 
+/// The first isle of the chapter isle `i` is in.
+fn chapter_start(i: usize) -> usize {
+    (0..=i).rev().find(|&k| k == 0 || LEVELS[k - 1].chapter != LEVELS[i].chapter).unwrap_or(0)
+}
+
+/// Opens today's tide.
+fn open_daily(state: &mut State) {
+    let level: &'static Level = Box::leak(Box::new(daily::daily(daily::today())));
+    state.open_level(level, LEVELS.len() - 1);
+}
+
+/// Opens a round of review drills from the isles cleared longest ago.
+fn open_review(state: &mut State) -> bool {
+    let mut cleared: Vec<usize> = (0..LEVELS.len()).filter(|&i| state.best[i].is_some()).collect();
+    cleared.sort_by_key(|&i| state.practiced[i]);
+    let titles: Vec<&str> = cleared.iter().map(|&i| LEVELS[i].title).collect();
+    let mut drills: Vec<(&'static Level, usize)> = review::pick(&titles, 5, state.clears as u64)
+        .into_iter()
+        .map(|l| {
+            let from = l.title.strip_prefix("Review · ").and_then(index_of).unwrap_or(0);
+            (&*Box::leak(Box::new(l)), from)
+        })
+        .collect();
+    if drills.is_empty() {
+        return false;
+    }
+    let (first, from) = drills.remove(0);
+    state.open_level(first, from);
+    state.drills = drills;
+    true
+}
+
 fn handle_key(key: Key, ui: Ui, motion: &Motion) {
     let mut scene_changed = false;
+    let mut boss_hit = false;
+    let mut new_word = false;
+    let cursor_before = session_value(|s| s.editor.cursor);
     let event = with_state(|state| {
         state.toast.clear();
         match &mut state.screen {
             Screen::Menu { selected } => {
                 let n = LEVELS.len();
                 match key {
-                    Key::Char('j') => *selected = (*selected + 1).min(n - 1),
-                    Key::Char('k') => *selected = selected.saturating_sub(1),
+                    Key::Char('l' | 'w') => *selected = (*selected + 1).min(n - 1),
+                    Key::Char('h' | 'b') => *selected = selected.saturating_sub(1),
+                    Key::Char('j') => {
+                        let here = LEVELS[*selected].chapter;
+                        if let Some(k) = (*selected..n).find(|&k| LEVELS[k].chapter != here) {
+                            *selected = k;
+                        }
+                    }
+                    Key::Char('k') => {
+                        let start = chapter_start(*selected);
+                        *selected = if start < *selected { start } else { chapter_start(start.saturating_sub(1)) };
+                    }
                     Key::Char('G') => *selected = n - 1,
                     Key::Char('g') => *selected = 0,
                     Key::Char('m') => {
                         audio::set_muted(!audio::muted());
                     }
-                    Key::Enter | Key::Char('l') | Key::Char(' ') => {
+                    Key::Char('v') => {
+                        let selected = *selected;
+                        state.screen = Screen::Grammar { selected };
+                        scene_changed = true;
+                        return Some(Event::None);
+                    }
+                    Key::Char('d') => {
+                        open_daily(state);
+                        scene_changed = true;
+                        return Some(Event::Moved);
+                    }
+                    Key::Char('r') => {
+                        if open_review(state) {
+                            scene_changed = true;
+                        } else {
+                            state.toast = "Review drills come from isles you've cleared: clear a few first.".into();
+                        }
+                        return Some(Event::Moved);
+                    }
+                    Key::Enter | Key::Char(' ' | 'i') => {
                         let index = *selected;
                         state.open(index);
                         scene_changed = true;
@@ -352,6 +562,23 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                     _ => return None,
                 }
                 Some(Event::Moved)
+            }
+            Screen::Grammar { selected } => match key {
+                Key::Esc | Key::Enter | Key::Char('q' | 'v' | ' ') => {
+                    let selected = *selected;
+                    state.screen = Screen::Menu { selected };
+                    scene_changed = true;
+                    Some(Event::None)
+                }
+                _ => None,
+            },
+            Screen::Replay(r) => {
+                if r.key(key) {
+                    let Screen::Replay(r) = std::mem::replace(&mut state.screen, Screen::Menu { selected: 0 }) else { unreachable!() };
+                    state.screen = Screen::Play(Box::new(r.session));
+                    scene_changed = true;
+                }
+                Some(Event::None)
             }
             Screen::Play(_) if state.intro => {
                 // The intro takes the keyboard until it's closed.
@@ -364,25 +591,53 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                 }
             }
             Screen::Play(session) => {
+                let (index, level, campaign) = (session.index, session.level(), session.in_campaign());
                 if session.complete {
-                    let index = session.index;
                     // A missed lesson: Enter tries the isle again.
                     let failed = !session.missed.is_empty();
-                    let next = match key {
-                        Key::Enter if failed => Some(index),
-                        Key::Enter | Key::Char('n') => Some((index + 1).min(LEVELS.len() - 1)),
-                        Key::Char('r') => Some(index),
-                        Key::Char('q') | Key::Esc => None,
+                    match key {
+                        Key::Char('p') => {
+                            let Screen::Play(done) = std::mem::replace(&mut state.screen, Screen::Menu { selected: index }) else { unreachable!() };
+                            state.screen = Screen::Replay(Box::new(replay::Replay::new(*done)));
+                        }
+                        Key::Char('r') => state.retry(level, index, campaign),
+                        Key::Enter if failed => state.retry(level, index, campaign),
+                        Key::Enter | Key::Char('n') if !state.drills.is_empty() => {
+                            let (next, from) = state.drills.remove(0);
+                            let rest = std::mem::take(&mut state.drills);
+                            state.open_level(next, from);
+                            state.drills = rest;
+                        }
+                        Key::Enter | Key::Char('n') if campaign && index + 1 < LEVELS.len() => state.open(index + 1),
+                        Key::Enter | Key::Char('n' | 'q') | Key::Esc => {
+                            state.drills.clear();
+                            state.screen = Screen::Menu { selected: index };
+                        }
                         _ => return None,
-                    };
-                    match next {
-                        Some(i) if !(index + 1 == LEVELS.len() && key != Key::Char('r')) => state.open(i),
-                        _ => state.screen = Screen::Menu { selected: index },
                     }
                     scene_changed = true;
                     return Some(Event::Moved);
                 }
+                let (keys_before, used_before, work_before) = (session.keys.len(), session.used.len(), work(session));
                 let event = session.press(key);
+                if keys_before == 0 && !session.keys.is_empty() && state.started.is_none() {
+                    state.started = Some(now_ms());
+                }
+                if event == Event::Complete && state.took.is_none() {
+                    state.took = Some(state.started.map_or(0.0, |t| now_ms() - t));
+                }
+                // New words for the grammar.
+                for token in session.used.iter().skip(used_before) {
+                    if let Some((verb, noun)) = grammar::pair(token)
+                        && state.grammar.insert(grammar::key(verb, noun))
+                    {
+                        let total = grammar::VERBS.len() * grammar::NOUNS.len();
+                        state.toast = format!("New word: {verb} + {noun}  ·  {} of {total} in your grammar (v on the map)", state.grammar.len());
+                        let _ = Storage::set_item("hjkl-quest.grammar", state.grammar.iter().cloned().collect::<Vec<_>>().join("|"));
+                        new_word = true;
+                    }
+                }
+                boss_hit = is_boss(session) && !session.complete && work(session) < work_before;
                 match &event {
                     Event::Command(cmd) => {
                         let cmd = cmd.trim().to_string();
@@ -393,13 +648,20 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                                 scene_changed = true;
                             }
                             "e!" | "restart" | "r" => {
-                                let index = session.index;
-                                state.screen = Screen::Play(Box::new(Session::new(index)));
+                                state.retry(level, index, campaign);
+                                scene_changed = true;
+                            }
+                            "n" | "next" if campaign => {
+                                let index = (session.index + 1).min(LEVELS.len() - 1);
+                                state.open(index);
                                 scene_changed = true;
                             }
                             "n" | "next" => {
-                                let index = (session.index + 1).min(LEVELS.len() - 1);
-                                state.open(index);
+                                state.screen = Screen::Menu { selected: index };
+                                scene_changed = true;
+                            }
+                            "grammar" => {
+                                state.screen = Screen::Grammar { selected: index };
                                 scene_changed = true;
                             }
                             "mute" | "sound" => {
@@ -412,6 +674,22 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                         }
                     }
                     Event::Complete if !session.cleared() => {}
+                    Event::Complete if !campaign => {
+                        let n = session.keys.len();
+                        if level.chapter == "Daily Tide" {
+                            let today = daily::today();
+                            if state.daily_best.is_none_or(|(d, b)| d != today || n < b) {
+                                state.daily_best = Some((today, n));
+                                let _ = Storage::set_item("hjkl-quest.daily", format!("{today}={n}"));
+                            }
+                        } else {
+                            // A drill keeps its isle fresh.
+                            state.clears += 1;
+                            state.practiced[index] = state.clears;
+                            save_numbers("hjkl-quest.practiced", state.practiced.iter().map(|&p| Some(p)));
+                            let _ = Storage::set_item("hjkl-quest.clears", state.clears.to_string());
+                        }
+                    }
                     Event::Complete => {
                         let i = session.index;
                         let n = session.keys.len();
@@ -421,6 +699,15 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                         }
                         let best = state.best.clone();
                         save_progress(&best);
+                        let tenths = (state.took.unwrap_or(0.0) / 100.0) as u32;
+                        if state.times[i].is_none_or(|t| tenths < t) {
+                            state.times[i] = Some(tenths);
+                            save_numbers("hjkl-quest.times", state.times.iter().copied());
+                        }
+                        state.clears += 1;
+                        state.practiced[i] = state.clears;
+                        save_numbers("hjkl-quest.practiced", state.practiced.iter().map(|&p| Some(p)));
+                        let _ = Storage::set_item("hjkl-quest.clears", state.clears.to_string());
                     }
                     _ => {}
                 }
@@ -438,8 +725,17 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             audio::play(Sfx::Gem, 0.55);
             let (cx, cy) = tile_center(*p);
             ui.burst_at.set((cx, cy));
+            ui.burst_color.set(GEM);
             motion.burst.set(0.0);
             motion.burst.timing(1.0, 650.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+        }
+        Event::Squashed(p) => {
+            audio::play(Sfx::Squash, 0.6);
+            let (cx, cy) = tile_center(*p);
+            ui.burst_at.set((cx, cy + 6.0));
+            ui.burst_color.set(BUG);
+            motion.burst.set(0.0);
+            motion.burst.timing(1.0, 550.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
         }
         Event::Bell => {
             audio::play(Sfx::Bell, 0.35);
@@ -453,6 +749,7 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             audio::play(Sfx::Bell, 0.4);
             let (cx, cy) = tile_center(*p);
             ui.burst_at.set((cx, cy));
+            ui.burst_color.set(0xff6b6b);
             motion.burst.set(0.0);
             motion.burst.timing(1.0, 500.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
             motion.shake.keyframes(
@@ -479,6 +776,30 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             motion.card.spring(1.0, Spring { stiffness: 170.0, damping: 14.0, ..Spring::default() });
         }
         _ => {}
+    }
+    if boss_hit {
+        audio::play(Sfx::Hit, 0.55);
+        motion.boss.keyframes(
+            [Keyframe::new(0.0), Keyframe::new(1.0), Keyframe::new(-0.6), Keyframe::new(0.3), Keyframe::new(0.0)],
+            KeyframeTiming::new(420.0),
+        );
+    }
+    if new_word {
+        audio::play(Sfx::Word, 0.4);
+    }
+    // A long jump leaves a trail of dust.
+    if !scene_changed
+        && let (Some(from), Some(to)) = (cursor_before, session_value(|s| s.editor.cursor))
+        && from.row.abs_diff(to.row) + from.col.abs_diff(to.col) >= 4
+        && matches!(event, Event::Moved | Event::Gem(_) | Event::Squashed(_))
+    {
+        ui.trail.set((tile_center(from), tile_center(to)));
+        motion.trail.set(0.0);
+        motion.trail.timing(1.0, 650.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+    }
+    sync_theme(ui);
+    if with_state(|s| matches!(s.screen, Screen::Menu { .. })) {
+        worldmap::follow(ui, motion, !scene_changed);
     }
     place_hero(ui, motion, !scene_changed);
     // A trap: the wisp hops up onto the block, and is flung back.
@@ -515,7 +836,7 @@ fn place_hero(ui: Ui, motion: &Motion, animate: bool) {
             let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(0);
             Some((e.cursor, rows, cols))
         }
-        Screen::Menu { .. } => None,
+        _ => None,
     }) else {
         return;
     };
@@ -887,8 +1208,8 @@ impl TileLook {
 
     fn color(self) -> u32 {
         match self {
-            TileLook::Grass | TileLook::Flower => GRASS,
-            TileLook::Stone => STONE,
+            TileLook::Grass | TileLook::Flower => theme().grass,
+            TileLook::Stone => theme().stone,
             TileLook::Amber => AMBER,
             TileLook::Teal => TEAL,
             TileLook::Plank => WOOD,
@@ -1235,6 +1556,10 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
             painter = painter.fill_color(hex(GEM)).begin_path().arc(x, y, (cw * 0.55).max(2.0), 0.0, TAU).fill();
         }
     }
+    for bug in &session.bugs {
+        let (x, y) = (bug.at.col as f32 * cw + cw / 2.0, bug.at.row as f32 * ch + ch / 2.0);
+        painter = painter.fill_color(hex(BUG)).begin_path().arc(x, y, (cw * 0.6).max(2.5), 0.0, TAU).fill();
+    }
     let cur = e.cursor;
     painter = painter
         .fill_color(hex(mode_color(e)))
@@ -1318,13 +1643,13 @@ fn draw_minimap_rulers(painter: Painter, cur: Pos, rows: usize, cols: usize, cw:
     painter
 }
 
-fn draw_burst(at: (f32, f32), burst: &AnimatedValue) -> Painter {
+fn draw_burst(at: (f32, f32), color: u32, burst: &AnimatedValue) -> Painter {
     let (cx, cy) = at;
     let radius = burst.mul(30.0).add(4.0);
     let fade = burst.interpolate(&[0.0, 1.0], &[1.0, 0.0]);
     let mut painter = Painter::new()
         .global_alpha(&fade)
-        .stroke_color(hex(GEM))
+        .stroke_color(hex(color))
         .line_width(2.0)
         .begin_path()
         .arc(cx, cy - 10.0, &radius, 0.0, TAU)
@@ -1337,22 +1662,108 @@ fn draw_burst(at: (f32, f32), burst: &AnimatedValue) -> Painter {
             .translate(cx, cy - 10.0)
             .rotate(a)
             .translate(&r, 0.0)
-            .fill_color(hex(0xffffff))
+            .fill_color(if k % 2 == 0 { hex(0xffffff) } else { hex(color) })
             .fill_rect(-1.5, -1.5, 3.0, 3.0)
             .restore();
     }
     painter
 }
 
-fn draw_sky(size: (f32, f32), motion: &Motion) -> Painter {
+/// A typo bug: a little green beetle, facing the way it crawls.
+fn draw_bugs(session: &Session, bob: &AnimatedValue) -> Painter {
+    let mut painter = Painter::new();
+    for bug in &session.bugs {
+        let (cx, cy) = tile_center(bug.at);
+        let d = bug.dir as f32;
+        painter = painter
+            .fill_color(hexa(0x000000, 0.3))
+            .begin_path()
+            .ellipse_at(cx, cy + 4.0, 11.0, 4.0)
+            .fill()
+            .save()
+            .translate(cx, cy - 6.0)
+            .translate(&bob.mul(0.4), 0.0)
+            .stroke_color(hex(0x1d3a10))
+            .line_width(1.6)
+            .line_cap(LineCap::Round);
+        // Legs, three a side.
+        for k in [-5.0f32, 0.0, 5.0] {
+            painter = painter.begin_path().move_to(k, -2.0).line_to(k - 2.0, -8.0).move_to(k, 2.0).line_to(k - 2.0, 8.0).stroke();
+        }
+        painter = painter
+            .fill_color(hex(BUG))
+            .begin_path()
+            .ellipse_at(0.0, 0.0, 9.0, 6.5)
+            .fill()
+            .stroke_color(hex(0x2d5a1a))
+            .line_width(1.0)
+            .begin_path()
+            .move_to(-8.0, 0.0)
+            .line_to(8.0, 0.0)
+            .stroke()
+            .fill_color(hex(0x2d5a1a))
+            .begin_path()
+            .arc(d * 9.0, 0.0, 4.2, 0.0, TAU)
+            .fill()
+            .fill_color(hex(0xffffff))
+            .begin_path()
+            .arc(d * 10.5, -1.8, 1.5, 0.0, TAU)
+            .arc(d * 10.5, 1.8, 1.5, 0.0, TAU)
+            .fill()
+            .stroke_color(hex(0x2d5a1a))
+            .begin_path()
+            .move_to(d * 11.0, -2.0)
+            .line_to(d * 15.0, -6.0)
+            .move_to(d * 11.0, 2.0)
+            .line_to(d * 15.0, 6.0)
+            .stroke()
+            .restore();
+    }
+    painter
+}
+
+/// Dust puffs along a long jump, fading as they spread.
+fn draw_trail(path: ((f32, f32), (f32, f32)), trail: &AnimatedValue) -> Painter {
+    let ((x0, y0), (x1, y1)) = path;
+    let fade = trail.interpolate(&[0.0, 1.0], &[0.7, 0.0]);
+    let grow = trail.mul(5.0).add(2.0);
+    let n = ((x1 - x0).hypot(y1 - y0) / 14.0).clamp(3.0, 40.0) as usize;
+    let mut painter = Painter::new().global_alpha(&fade).fill_color(hex(0xfff3b0));
+    for k in 0..n {
+        let t = k as f32 / n as f32;
+        let (x, y) = (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t - 4.0);
+        painter = painter.save().translate(x, y + (k % 2) as f32 * 3.0).begin_path().arc(0.0, 0.0, &grow, 0.0, TAU).fill().restore();
+    }
+    painter
+}
+
+fn draw_sky(size: (f32, f32), motion: &Motion, theme: story::Theme) -> Painter {
     let (w, h) = size;
+    let [top, mid, low] = theme.sky;
     let sky = CanvasGradient::linear(point(px(0.0), px(0.0)), point(px(0.0), px(h)))
-        .add_color_stop(percentage(0.0), hex(SKY_TOP))
-        .add_color_stop(percentage(0.6), hex(SKY_MID))
-        .add_color_stop(percentage(1.0), hex(SKY_LOW));
+        .add_color_stop(percentage(0.0), hex(top))
+        .add_color_stop(percentage(0.6), hex(mid))
+        .add_color_stop(percentage(1.0), hex(low));
     let mut painter = Painter::new().fill_style(sky).fill_rect(0.0, 0.0, w, h);
-    // The moon.
     let (mx, my) = (w * 0.82, h * 0.16);
+    if theme.day {
+        // A low, warm sun.
+        painter = painter
+            .fill_style(
+                CanvasGradient::radial(point(px(mx), px(my)), px(10.0), point(px(mx), px(my)), px(120.0))
+                    .add_color_stop(percentage(0.0), hexa(0xffe6a8, 0.45))
+                    .add_color_stop(percentage(1.0), hexa(0xffe6a8, 0.0)),
+            )
+            .begin_path()
+            .arc(mx, my, 120.0, 0.0, TAU)
+            .fill()
+            .fill_color(hex(0xfff0c4))
+            .begin_path()
+            .arc(mx, my, 26.0, 0.0, TAU)
+            .fill();
+        return draw_weather(draw_clouds(painter, size, motion), size, motion, theme.weather);
+    }
+    // The moon.
     painter = painter
         .fill_style(
             CanvasGradient::radial(point(px(mx), px(my)), px(10.0), point(px(mx), px(my)), px(90.0))
@@ -1366,7 +1777,7 @@ fn draw_sky(size: (f32, f32), motion: &Motion) -> Painter {
         .begin_path()
         .arc(mx, my, 22.0, 0.0, TAU)
         .fill()
-        .fill_color(hexa(SKY_MID, 0.9))
+        .fill_color(hexa(mid, 0.9))
         .begin_path()
         .arc(mx + 9.0, my - 5.0, 19.0, 0.0, TAU)
         .fill();
@@ -1382,7 +1793,12 @@ fn draw_sky(size: (f32, f32), motion: &Motion) -> Painter {
         }
         painter = painter.restore();
     }
-    // Drifting clouds low on the horizon.
+    draw_weather(draw_clouds(painter, size, motion), size, motion, theme.weather)
+}
+
+/// Drifting clouds low on the horizon.
+fn draw_clouds(mut painter: Painter, size: (f32, f32), motion: &Motion) -> Painter {
+    let (w, h) = size;
     for (k, (y, len, alpha)) in [(0.78, 0.5, 0.10), (0.88, 0.7, 0.08), (0.95, 0.45, 0.12)].iter().enumerate() {
         let speed = [1.0, 0.6, 1.4][k];
         let offset = motion.drift.mul(w * speed);
@@ -1396,7 +1812,45 @@ fn draw_sky(size: (f32, f32), motion: &Motion) -> Painter {
         }
         painter = painter.restore();
     }
-    // Fireflies.
+    painter
+}
+
+/// The chapter's weather: fireflies and motes drift; snow, rain, leaves
+/// and embers fall (or rise) on a loop.
+fn draw_weather(mut painter: Painter, size: (f32, f32), motion: &Motion, weather: story::Weather) -> Painter {
+    use story::Weather;
+    let (w, h) = size;
+    if !matches!(weather, Weather::Fireflies | Weather::Motes) {
+        // Two copies a screen apart, moving one screen per loop: seamless.
+        let rising = weather == Weather::Embers;
+        let shift = if rising { motion.fall.mul(-h) } else { motion.fall.mul(h) };
+        painter = painter.save().translate(0.0, &shift);
+        for copy in [0.0f32, if rising { 1.0 } else { -1.0 }] {
+            for i in 0..60u32 {
+                let x = noise(Pos { row: i as usize + 90, col: 13 }) * w;
+                let y = noise(Pos { row: 17, col: i as usize + 120 }) * h + copy * h;
+                let s = 0.6 + noise(Pos { row: i as usize, col: 99 });
+                painter = match weather {
+                    Weather::Snow => painter.fill_color(hexa(0xffffff, 0.75)).begin_path().arc(x, y, 1.4 * s + 0.6, 0.0, TAU).fill(),
+                    Weather::Rain => painter
+                        .stroke_color(hexa(0xb8d0ff, 0.35))
+                        .line_width(1.0)
+                        .begin_path()
+                        .move_to(x, y)
+                        .line_to(x - 3.0, y + 12.0 * s)
+                        .stroke(),
+                    Weather::Leaves => painter
+                        .fill_color(hexa(if i % 2 == 0 { 0xd98a3a } else { 0xc9b04a }, 0.7))
+                        .begin_path()
+                        .ellipse_at(x, y, 3.5 * s, 1.8 * s)
+                        .fill(),
+                    _ => painter.fill_color(hexa(0xffa04a, 0.7)).begin_path().arc(x, y, 1.2 * s, 0.0, TAU).fill(),
+                };
+            }
+        }
+        return painter.restore();
+    }
+    let glow = if weather == Weather::Motes { 0xcfe0ff } else { 0xfff7a0 };
     painter = painter.save().translate(&motion.fly_x, &motion.fly_y);
     for i in 0..14u32 {
         let fx = noise(Pos { row: i as usize + 40, col: 3 }) * w;
@@ -1404,8 +1858,8 @@ fn draw_sky(size: (f32, f32), motion: &Motion) -> Painter {
         painter = painter
             .fill_style(
                 CanvasGradient::radial(point(px(fx), px(fy)), px(0.5), point(px(fx), px(fy)), px(7.0))
-                    .add_color_stop(percentage(0.0), hexa(0xfff7a0, 0.9))
-                    .add_color_stop(percentage(1.0), hexa(0xfff7a0, 0.0)),
+                    .add_color_stop(percentage(0.0), hexa(glow, 0.9))
+                    .add_color_stop(percentage(1.0), hexa(glow, 0.0)),
             )
             .begin_path()
             .arc(fx, fy, 7.0, 0.0, TAU)
@@ -1449,6 +1903,9 @@ pub fn App() -> impl IntoElement {
         window: signal((1200.0_f32, 800.0_f32)),
         burst_at: signal((0.0_f32, 0.0_f32)),
         beat: signal(0_u64),
+        burst_color: signal(GEM),
+        trail: signal(((0.0_f32, 0.0_f32), (0.0_f32, 0.0_f32))),
+        chapter: signal(0_usize),
     };
     set_interval(std::time::Duration::from_millis(520), move || ui.beat.update(|b| *b += 1));
     let motion = Rc::new(Motion {
@@ -1467,6 +1924,9 @@ pub fn App() -> impl IntoElement {
         fly_y: animated_value(0.0),
         drift: animated_value(0.0),
         card: animated_value(0.0),
+        fall: animated_value(0.0),
+        trail: animated_value(1.0),
+        boss: animated_value(0.0),
     });
     // Ambient loops: all run natively, with no code per frame.
     let breathe = |v: &AnimatedValue, a: f32, b: f32, ms: f32| {
@@ -1485,11 +1945,17 @@ pub fn App() -> impl IntoElement {
         [Keyframe::new(0.0), Keyframe::new(1.0)],
         KeyframeTiming::new(90_000.0).easing(Easing::Linear).infinite().frame_rate(20.0),
     );
+    motion.fall.keyframes(
+        [Keyframe::new(0.0), Keyframe::new(1.0)],
+        KeyframeTiming::new(9_000.0).easing(Easing::Linear).infinite().frame_rate(30.0),
+    );
 
     audio::load_all();
     audio::start_ambience();
     bind_keys(ui, motion.clone());
     follow_url(ui);
+    with_state(|s| s.new_run());
+    sync_theme(ui);
 
     let sky_motion = motion.clone();
     let screen_motion = motion.clone();
@@ -1499,7 +1965,10 @@ pub fn App() -> impl IntoElement {
         .text_color(hex(0xece6ff))
         .on_layout(move |b: &Bounds<Points>| ui.window.set((b.size.width.0, b.size.height.0)))
         .child(
-            canvas(move || draw_sky(ui.window.get(), &sky_motion))
+            canvas(move || {
+                let chapter = ui.chapter.get();
+                draw_sky(ui.window.get(), &sky_motion, story::CHAPTERS[chapter.min(story::CHAPTERS.len() - 1)].theme)
+            })
                 .absolute()
                 .top_0()
                 .left_0()
@@ -1509,11 +1978,17 @@ pub fn App() -> impl IntoElement {
         .child(
             view().flex_1().p_safe_area().child(dynamic(move || {
                 ui.scene.get();
-                let playing = with_state(|s| matches!(s.screen, Screen::Play(_)));
-                if playing {
-                    play_screen(ui, screen_motion.clone()).into_element()
-                } else {
-                    menu_screen(ui).into_element()
+                let which = with_state(|s| match s.screen {
+                    Screen::Play(_) => 0,
+                    Screen::Menu { .. } => 1,
+                    Screen::Grammar { .. } => 2,
+                    Screen::Replay(_) => 3,
+                });
+                match which {
+                    0 => play_screen(ui, screen_motion.clone()).into_element(),
+                    1 => worldmap::menu_screen(ui, screen_motion.clone()).into_element(),
+                    2 => screens::grammar_screen(ui).into_element(),
+                    _ => replay::replay_screen(ui).into_element(),
                 }
             })),
         )
@@ -1557,15 +2032,22 @@ fn follow_url(ui: Ui) {
             return;
         }
         let here = with_state(|s| match &s.screen {
+            Screen::Play(p) if p.level().chapter == "Daily Tide" => "daily".to_string(),
+            Screen::Play(p) if !p.in_campaign() => "review".to_string(),
             Screen::Play(p) => slug(LEVELS[p.index].title),
-            Screen::Menu { .. } => "map".to_string(),
+            Screen::Grammar { .. } => "grammar".to_string(),
+            Screen::Menu { .. } | Screen::Replay(_) => "map".to_string(),
         });
         let _ = set_app_url(format!("#{here}"));
     });
     spawn(async move {
-        if let Some(i) = app_url().await.as_deref().and_then(isle_in) {
+        let url = app_url().await;
+        if let Some(i) = url.as_deref().and_then(isle_in) {
             with_state(|s| s.open(i));
+        } else if url.as_deref().is_some_and(|u| u.ends_with("#daily")) {
+            with_state(open_daily);
         }
+        sync_theme(ui);
         URL_READ.with(|r| r.set(true));
         ui.scene.update(|s| *s += 1);
         loop {
@@ -1576,171 +2058,29 @@ fn follow_url(ui: Ui) {
                 None => {
                     let selected = match &s.screen {
                         Screen::Play(p) => p.index,
-                        Screen::Menu { selected } => *selected,
+                        Screen::Replay(r) => r.session.index,
+                        Screen::Menu { selected } | Screen::Grammar { selected } => *selected,
                     };
                     s.screen = Screen::Menu { selected };
                     s.intro = false;
                 }
             });
+            sync_theme(ui);
             ui.scene.update(|s| *s += 1);
             ui.tick.update(|t| *t += 1);
         }
     });
 }
 
-fn menu_screen(ui: Ui) -> impl IntoElement {
-    // Each row's ref, to keep the chosen isle in view as j and k move.
-    let refs: Rc<Vec<ElementRef>> = Rc::new(LEVELS.iter().map(|_| element_ref()).collect());
-    let reveal = refs.clone();
-    effect(move || {
-        ui.tick.get();
-        let selected = with_state(|s| match s.screen {
-            Screen::Menu { selected } => Some(selected),
-            Screen::Play(_) => None,
-        });
-        if let Some(i) = selected {
-            let mut options = RevealOptions::default();
-            options.vertical = ScrollAlignment::Center;
-            reveal[i].reveal(options);
-        }
-    });
-    let rows = LEVELS.iter().enumerate().map(move |(i, level)| {
-        let row_ref = refs[i].clone();
-        let new_chapter = i == 0 || LEVELS[i - 1].chapter != level.chapter;
-        view()
-            .child(new_chapter.then(|| {
-                text(level.chapter)
-                    .text_size(px(12.0))
-                    .font_weight(FontWeight::BOLD)
-                    .letter_spacing(px(1.5))
-                    .text_color(hexa(0xc9b8ff, 0.7))
-                    .mt(px(if i == 0 { 0.0 } else { 10.0 }))
-                    .mb(px(4.0))
-            }))
-            .child(
-                view()
-                    .flex_row()
-                    .items_center()
-                    .gap_3()
-                    .px(px(12.0))
-                    .py(px(7.0))
-                    .rounded(px(8.0))
-                    .bg(move || {
-                        ui.tick.get();
-                        let sel = with_state(|s| matches!(s.screen, Screen::Menu { selected } if selected == i));
-                        if sel { hexa(0xfff3b0, 0.14) } else { hexa(0xffffff, 0.0) }
-                    })
-                    .border_1()
-                    .border_color(move || {
-                        ui.tick.get();
-                        let sel = with_state(|s| matches!(s.screen, Screen::Menu { selected } if selected == i));
-                        if sel { hexa(0xfff3b0, 0.5) } else { hexa(0xffffff, 0.0) }
-                    })
-                    .cursor_pointer()
-                    .element_ref(&row_ref)
-                    .on_press(move || {
-                        with_state(|s| s.open(i));
-                        ui.scene.update(|s| *s += 1);
-                    })
-                    .child(text(format!("{:>2}", i + 1)).font_family(MONO).text_color(hexa(0xffffff, 0.45)).w(px(22.0)))
-                    .child(text(level.title).text_size(px(15.0)).flex_1())
-                    .child(
-                        view().flex_row().gap_1().children(level.unlock.chars().take(6).map(|c| {
-                            text(game::key_name(c)).font_family(MONO).text_size(px(12.0)).text_color(hexa(0xfff3b0, 0.75))
-                        })),
-                    )
-                    .child(
-                        text(move || {
-                            ui.tick.get();
-                            let best = with_state(|s| s.best[i]);
-                            match best {
-                                Some(n) => {
-                                    let stars = game::stars(n, LEVELS[i].par());
-                                    format!("{}{}  {n}/{}", "★".repeat(stars as usize), "☆".repeat(3 - stars as usize), LEVELS[i].par())
-                                }
-                                None => format!("☆☆☆  par {}", LEVELS[i].par()),
-                            }
-                        })
-                        .font_family(MONO)
-                        .text_size(px(13.0))
-                        .text_color(hex(0xffd76b))
-                        .w(px(130.0))
-                        .text_right(),
-                    ),
-            )
-    });
-    view()
-        .flex_1()
-        .items_center()
-        .child(
-            view()
-                .w_full()
-                .max_w(px(760.0))
-                .flex_1()
-                .px(px(24.0))
-                .pt(px(36.0))
-                .gap_4()
-                .child(
-                    view()
-                        .items_center()
-                        .gap_2()
-                        .child(text("HJKL QUEST").text_size(px(44.0)).font_weight(FontWeight::BLACK).letter_spacing(px(6.0)).text_color(hex(0xfff3b0)))
-                        .child(
-                            text("A journey through the Buffer Archipelago: learn vim one isle at a time.")
-                                .text_size(px(15.0))
-                                .text_color(hexa(0xece6ff, 0.75)),
-                        ),
-                )
-                .child(
-                    view()
-                        .flex_row()
-                        .justify_center()
-                        .gap_2()
-                        .flex_wrap()
-                        .child(chip("j k", 0xfff3b0))
-                        .child(text("choose").text_color(hexa(0xffffff, 0.6)).mr(px(8.0)))
-                        .child(chip("Enter", 0xfff3b0))
-                        .child(text("play").text_color(hexa(0xffffff, 0.6)).mr(px(8.0)))
-                        .child(chip(":q", 0xfff3b0))
-                        .child(text("back here").text_color(hexa(0xffffff, 0.6)).mr(px(8.0)))
-                        .child(chip("m", 0xfff3b0))
-                        .child(text(move || {
-                            ui.tick.get();
-                            if audio::muted() { "sound off" } else { "sound on" }
-                        })
-                        .text_color(hexa(0xffffff, 0.6))),
-                )
-                .child(
-                    scroll().flex_1().child(
-                        view()
-                            .p(px(14.0))
-                            .rounded(px(14.0))
-                            .bg(hexa(0x0b0820, 0.55))
-                            .border_1()
-                            .border_color(hexa(0xc9b8ff, 0.18))
-                            .children(rows),
-                    ),
-                )
-                .child(
-                    text("Every isle has a par: the keystrokes of a short vim-golf solution. Can you match it?")
-                        .text_size(px(13.0))
-                        .text_color(hexa(0xece6ff, 0.5))
-                        .text_center()
-                        .pb(px(16.0)),
-                ),
-        )
-}
-
 fn session_value<R>(f: impl FnOnce(&Session) -> R) -> Option<R> {
     with_state(|s| match &s.screen {
         Screen::Play(session) => Some(f(session)),
-        Screen::Menu { .. } => None,
+        _ => None,
     })
 }
 
 fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
-    let Some(index) = session_value(|s| s.index) else { return view().into_element() };
-    let level = &LEVELS[index];
+    let Some((index, level, campaign)) = session_value(|s| (s.index, s.level(), s.in_campaign())) else { return view().into_element() };
     // Place the wisp at once when the level opens.
     place_hero(ui, &motion, false);
 
@@ -1749,6 +2089,9 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
     let burst = motion.clone();
     let card = motion.clone();
     let minimap = motion.clone();
+    let bugs = motion.clone();
+    let trail = motion.clone();
+    let boss = motion.clone();
     let stage = view()
         .flex_1()
         .overflow_hidden()
@@ -1800,6 +2143,18 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                             .right_0()
                             .bottom_0(),
                         )
+                        .child(canvas(move || draw_trail(ui.trail.get(), &trail.trail)).absolute().top_0().left_0().right_0().bottom_0())
+                        .child(
+                            canvas(move || {
+                                ui.tick.get();
+                                session_value(|s| draw_bugs(s, &bugs.bob)).unwrap_or_default()
+                            })
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .right_0()
+                            .bottom_0(),
+                        )
                         .child(
                             canvas(move || {
                                 ui.tick.get();
@@ -1812,7 +2167,7 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                             .bottom_0(),
                         )
                         .child(
-                            canvas(move || draw_burst(ui.burst_at.get(), &burst.burst))
+                            canvas(move || draw_burst(ui.burst_at.get(), ui.burst_color.get(), &burst.burst))
                                 .absolute()
                                 .top_0()
                                 .left_0()
@@ -1846,20 +2201,24 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                     ),
             )
         }))
+        .child(screens::boss_banner(ui, boss))
+        .child(screens::hint_card(ui))
         .child(status_line(ui))
         .child(complete_card(ui, card));
 
     let top = view()
         .flex_row()
+        .flex_wrap()
         .items_center()
         .gap_4()
         .child(
             view()
                 .flex_1()
+                .min_w(px(220.0))
                 .gap_1()
                 .child(text(level.chapter).text_size(px(12.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.75)))
                 .child(
-                    text(format!("{}. {}", index + 1, level.title))
+                    text(if campaign { format!("{}. {}", index + 1, level.title) } else { level.title.to_string() })
                         .text_size(px(24.0))
                         .font_weight(FontWeight::BOLD)
                         .text_color(hex(0xfff3b0)),
@@ -1873,6 +2232,15 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
             })
             .unwrap_or_default()
         }))
+        .child(stat("TIME", move || {
+            ui.tick.get();
+            ui.beat.get();
+            with_state(|s| match (s.took, s.started) {
+                (Some(t), _) => clock(t),
+                (None, Some(t)) => clock(now_ms() - t),
+                (None, None) => clock(0.0),
+            })
+        }))
         .child(stat("PAR", move || level.par().to_string()))
         .child(stat("CRYSTALS", move || {
             ui.tick.get();
@@ -1884,6 +2252,9 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         }))
         .child(stat("BEST", move || {
             ui.tick.get();
+            if !campaign {
+                return "–".to_string();
+            }
             with_state(|s| s.best[index].map_or("–".to_string(), |n| n.to_string()))
         }));
 
@@ -1931,7 +2302,7 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                     .child(text("GOAL").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(3.0)))
                     .child(view().flex_1().child(goal_view(ui, 12.0)))
             });
-            view().gap_2().child(chips).child(lesson_checklist(ui, index)).child(goal)
+            view().gap_2().child(chips).child(lesson_checklist(ui, level.title)).child(goal)
         })
     });
     view()
@@ -1946,7 +2317,7 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                 .flex_row()
                 .gap_4()
                 .child(view().flex_1().gap_2().child(stage).child(trail))
-                .child(dynamic(move || (ui.window.get().0 >= 980.0).then(|| side_panel(index, ui)))),
+                .child(dynamic(move || (ui.window.get().0 >= 980.0).then(|| side_panel(level, ui)))),
         )
         .child(intro::intro_modal(ui))
         .into_element()
@@ -1999,11 +2370,12 @@ fn status_line(ui: Ui) -> impl IntoElement {
         .child(
             text(move || {
                 ui.tick.get();
+                // Read before the session: both live in the state.
+                let msg = with_state_toast();
                 session_value(|s| match s.editor.mode {
                     Mode::Command { .. } => format!("{}{}▏", s.editor.cmd_prefix(), s.editor.cmdline),
                     Mode::Confirm => s.editor.confirm_prompt(),
                     _ => {
-                        let msg = with_state_toast();
                         if !msg.is_empty() {
                             msg
                         } else if !s.message.is_empty() {
@@ -2054,8 +2426,10 @@ fn with_state_toast() -> String {
 const PRESENT: u32 = 0x8fe3a0;
 
 /// The commands the isle must see used, ticked off as they are.
-fn lesson_checklist(ui: Ui, index: usize) -> impl IntoElement {
-    let title = LEVELS[index].title;
+fn lesson_checklist(ui: Ui, title: &'static str) -> impl IntoElement {
+    if lessons::requirements(title).is_empty() {
+        return view().into_element();
+    }
     view()
         .flex_row()
         .flex_wrap()
@@ -2073,6 +2447,7 @@ fn lesson_checklist(ui: Ui, index: usize) -> impl IntoElement {
                     .text_color(if done { hex(PRESENT) } else { hexa(0xece6ff, 0.6) })
             })))
         }))
+        .into_element()
 }
 
 /// The goal text, each character green when the buffer already has it and
@@ -2123,8 +2498,7 @@ fn goal_view(ui: Ui, size: f32) -> impl IntoElement {
     })
 }
 
-fn side_panel(index: usize, ui: Ui) -> impl IntoElement {
-    let level = &LEVELS[index];
+fn side_panel(level: &'static Level, ui: Ui) -> impl IntoElement {
     let teaches = level.teaches.iter().map(|(keys, what)| {
         view()
             .flex_row()
@@ -2144,7 +2518,7 @@ fn side_panel(index: usize, ui: Ui) -> impl IntoElement {
         .child(text(level.story).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.8)).italic())
         .child(text("NEW COMMANDS").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(4.0)))
         .child(view().gap_2().children(teaches))
-        .child(lesson_checklist(ui, index))
+        .child(lesson_checklist(ui, level.title))
         .child(level.goal_text().map(|_| {
             view()
                 .gap_2()
@@ -2188,8 +2562,15 @@ fn side_panel(index: usize, ui: Ui) -> impl IntoElement {
                         .child(text(want.to_string()).font_family(MONO).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.75)))
                 }))
         }))
-        .child((level.goal.is_none()).then(|| {
+        .child((level.goal.is_none() && !level.gems().is_empty()).then(|| {
             text("Collect every crystal ◆ to clear the isle.").text_size(px(13.0)).text_color(hex(GEM)).mt(px(4.0))
+        }))
+        .child((!level.bugs().is_empty()).then(|| {
+            text("Squash every bug: land on it. Each command moves them a tile, and they hatch twins every 8.")
+                .text_size(px(13.0))
+                .line_height(px(18.0))
+                .text_color(hex(BUG))
+                .mt(px(4.0))
         }))
         .child(view().flex_1())
         .child(text(format!("Tip: {}", level.tip)).text_size(px(12.5)).line_height(px(18.0)).text_color(hexa(0xece6ff, 0.55)))
@@ -2238,11 +2619,12 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         if !done {
             return None;
         }
-        let (index, keys, stars, par) = session_value(|s| (s.index, format_keys(&s.keys), s.stars(), s.par())).unwrap();
-        let level = &LEVELS[index];
+        let (index, keys, stars, par, level, campaign, boss) =
+            session_value(|s| (s.index, format_keys(&s.keys), s.stars(), s.par(), s.level(), s.in_campaign(), is_boss(s))).unwrap();
+        let (took, best_time, drills_left) = with_state(|s| (s.took.unwrap_or(0.0), s.times[index], s.drills.len()));
         let count = session_value(|s| s.keys.len()).unwrap();
         let (habits, trapped) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.trapped)).unwrap();
-        let last = index + 1 == LEVELS.len();
+        let last = campaign && index + 1 == LEVELS.len();
         let missed = session_value(|s| s.missed.clone()).unwrap_or_default();
         let failed = !missed.is_empty();
         let verdict = if failed {
@@ -2282,6 +2664,23 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .text_color(hex(if failed { 0xff8a70 } else { 0xffd76b })),
                         )
                         .child(text(verdict).text_size(px(18.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0)))
+                        .child((boss && !failed).then(|| {
+                            let name = story::chapter(level.chapter).map_or("", |c| c.boss);
+                            text(format!("⚔ {name} is defeated!")).text_size(px(14.0)).font_weight(FontWeight::BOLD).text_color(hex(0xff9a6b))
+                        }))
+                        .child(
+                            text(format!(
+                                "⏱ {}{}",
+                                clock(took),
+                                match best_time {
+                                    Some(t) if campaign && !failed => format!("   ·   best {}", clock(t as f64 * 100.0)),
+                                    _ => String::new(),
+                                }
+                            ))
+                            .font_family(MONO)
+                            .text_size(px(13.0))
+                            .text_color(hexa(0xece6ff, 0.75)),
+                        )
                         .child((last && !failed).then(|| {
                             // The ending: the archipelago restored, and the stars of the whole journey.
                             let (stars, cleared) = with_state(|s| {
@@ -2347,7 +2746,16 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .child(text(format!("YOUR KEYS · {count}")).text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)))
                                 .child(text(keys).font_family(MONO).text_size(px(14.0)).text_color(hex(0xece6ff)))
                                 .child(text(format!("GOLF SOLUTION · {par}")).text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)).mt(px(8.0)))
-                                .child(spoiler(format_keys(&vim::parse_keys(level.solution)))),
+                                .child(spoiler(format_keys(&vim::parse_keys(level.solution))))
+                                .child(
+                                    view()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap_2()
+                                        .mt(px(6.0))
+                                        .child(chip("p", GEM))
+                                        .child(text("replay your run beside the golf line, step by step").text_size(px(12.5)).text_color(hexa(0xffffff, 0.6))),
+                                ),
                         )
                         .child((!habits.is_empty() || trapped > 0).then(|| {
                             view()
@@ -2371,11 +2779,13 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .child(chip("Enter", 0xfff3b0))
                                 .child(
                                     text(if failed {
-                                        "try again"
-                                    } else if last {
-                                        "back to the map"
+                                        "try again".to_string()
+                                    } else if drills_left > 0 {
+                                        format!("next drill ({drills_left} left)")
+                                    } else if last || !campaign {
+                                        "back to the map".to_string()
                                     } else {
-                                        "next isle"
+                                        "next isle".to_string()
                                     })
                                     .text_color(hexa(0xffffff, 0.65))
                                     .mr(px(10.0)),

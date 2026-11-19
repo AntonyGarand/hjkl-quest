@@ -6,11 +6,22 @@ use super::*;
 pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
     dynamic(move || {
         ui.tick.get();
-        let index = with_state(|s| match &s.screen {
-            Screen::Play(p) if s.intro => Some(p.index),
+        let (index, level, boss) = with_state(|s| match &s.screen {
+            Screen::Play(p) if s.intro => Some((p.index, p.level(), is_boss(p))),
             _ => None,
         })?;
-        let level = &LEVELS[index];
+        // Pip speaks rowing up to a chapter; a boss guards its last isle.
+        let chapter = story::chapter(level.chapter);
+        let first = index == chapter_start(index);
+        let speech = chapter.and_then(|c| {
+            if first {
+                Some(("🦉 Pip", c.pip))
+            } else if boss {
+                Some((c.boss, c.taunt))
+            } else {
+                None
+            }
+        });
         let narrow = ui.window.get_untracked().0 < 760.0;
         let max_h = (ui.window.get_untracked().1 - 40.0).max(300.0);
         let lessons = level.teaches.iter().map(|(keys, what)| {
@@ -21,7 +32,9 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
                 .child(view().min_w(px(110.0)).items_start().child(chip(*keys, 0xfff3b0)))
                 .child(text(*what).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.88)).flex_1())
         });
-        let goal = if !level.want_files().is_empty() {
+        let goal = if !level.bugs().is_empty() {
+            "Goal: squash every bug by landing on it. Each command moves them one tile; every 8 commands they hatch twins."
+        } else if !level.want_files().is_empty() {
             "Goal: make the text match the goal, and write the files it asks for."
         } else if level.goal.is_some() {
             "Goal: edit the text until it matches the goal shown beside the isle."
@@ -65,6 +78,21 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
             .child(text(level.chapter).text_size(px(12.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.75)))
             .child(text(format!("{}. {}", index + 1, level.title)).text_size(px(26.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0)))
             .child(text(level.story).text_size(px(14.0)).line_height(px(20.0)).italic().text_color(hexa(0xece6ff, 0.75)))
+            .child(speech.map(|(who, line)| {
+                let boss_speaking = !who.starts_with('🦉');
+                let color = if boss_speaking { 0xff9a6b } else { 0x9fd8ff };
+                view()
+                    .flex_row()
+                    .gap_3()
+                    .items_start()
+                    .p(px(12.0))
+                    .rounded(px(12.0))
+                    .bg(hexa(color, 0.10))
+                    .border_1()
+                    .border_color(hexa(color, 0.4))
+                    .child(text(who).text_size(px(13.0)).font_weight(FontWeight::BOLD).text_color(hex(color)).min_w(px(80.0)))
+                    .child(text(format!("“{line}”")).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.9)).flex_1())
+            }))
             .child(heading("YOU WILL LEARN"))
             .child(view().gap_2().children(lessons))
             .child(heading("SEE IT WORK"))

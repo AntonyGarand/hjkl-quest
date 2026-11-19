@@ -18,9 +18,15 @@ pub enum Sfx {
     Complete,
     Pad1,
     Pad2,
+    /// A bug caught: a squelch and a pop.
+    Squash,
+    /// A boss struck: a low thump.
+    Hit,
+    /// A new verb + noun pair: a bright two-note chirp.
+    Word,
 }
 
-const ALL: [Sfx; 8] = [Sfx::Step, Sfx::Edit, Sfx::Gem, Sfx::Bell, Sfx::Locked, Sfx::Complete, Sfx::Pad1, Sfx::Pad2];
+const ALL: [Sfx; 11] = [Sfx::Step, Sfx::Edit, Sfx::Gem, Sfx::Bell, Sfx::Locked, Sfx::Complete, Sfx::Pad1, Sfx::Pad2, Sfx::Squash, Sfx::Hit, Sfx::Word];
 
 thread_local! {
     static SOUNDS: RefCell<Vec<(Sfx, Sound)>> = const { RefCell::new(Vec::new()) };
@@ -113,6 +119,33 @@ fn synth(sfx: Sfx) -> Vec<u8> {
                 tone(&mut b, k as f32 * 0.11, *f, 1.2, 0.17, 3.5);
             }
             tone(&mut b, 0.55, 261.63, 1.0, 0.15, 2.5);
+            b
+        }
+        Sfx::Squash => {
+            let mut b = buffer(0.22);
+            // A falling chirp, then a pop.
+            for (i, s) in b.iter_mut().enumerate() {
+                let t = i as f32 / RATE as f32;
+                let f = 900.0 * (-t * 9.0).exp() + 120.0;
+                *s = (TAU * f * t).sin() * (-t * 18.0).exp() * 0.35;
+            }
+            tone(&mut b, 0.07, 1400.0, 0.08, 0.15, 60.0);
+            b
+        }
+        Sfx::Hit => {
+            let mut b = buffer(0.35);
+            for (i, s) in b.iter_mut().enumerate() {
+                let t = i as f32 / RATE as f32;
+                let f = 110.0 * (-t * 4.0).exp() + 45.0;
+                *s = (TAU * f * t).sin() * (-t * 9.0).exp() * 0.6;
+            }
+            tone(&mut b, 0.0, 220.0, 0.12, 0.12, 30.0);
+            b
+        }
+        Sfx::Word => {
+            let mut b = buffer(0.4);
+            tone(&mut b, 0.0, 1174.7, 0.3, 0.15, 12.0);
+            tone(&mut b, 0.08, 1568.0, 0.3, 0.15, 10.0);
             b
         }
         Sfx::Pad1 | Sfx::Pad2 => {

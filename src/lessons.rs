@@ -17,6 +17,8 @@ pub fn requirements(title: &str) -> &'static [(&'static str, &'static str)] {
         "Edge of the World" => &[("0", "0"), ("^", "^"), ("$", "$")],
         "Long Jumps" => &[("{n}G", "⁰G"), ("gg", "gg")],
         "Seek and Find" => &[("f{c}", "f·"), ("F{c} or T{c}", "F·|T·"), ("t{c}", "t·"), ("; or ,", ";|,")],
+        "Bug Hunt" => &[("a count and f: 3fb", "⁰f·|⁰t·|⁰F·|⁰T·")],
+        "Infestation" => &[("/text", "/·…"), ("n or N", "n|N")],
         "Paragraph Isles" => &[("} or {", "}|{")],
         "Mirror Matching" => &[("%", "%")],
         "Search Party" => &[("/text", "/·…"), ("n or N", "n|N")],

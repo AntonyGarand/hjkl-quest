@@ -17,11 +17,35 @@ pub enum Event {
     Command(String),
     /// The cursor landed on a trap (here) and was thrown back.
     Trapped(Pos),
+    /// The cursor caught a bug, here.
+    Squashed(Pos),
     None,
 }
 
+/// A typo bug: it crawls one tile along its line per keystroke, turning
+/// at the ends, and hatches a twin now and then. Land on it to squash it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bug {
+    pub at: Pos,
+    /// +1 crawling right, -1 left.
+    pub dir: i8,
+}
+
+/// Commands between hatchings, and the most bugs an isle can hold.
+pub const HATCH_EVERY: usize = 8;
+pub const MAX_BUGS: usize = 6;
+
+#[derive(Clone)]
 pub struct Session {
+    /// The campaign isle this is, or (for daily puzzles and drills) the
+    /// isle whose keys it allows.
     pub index: usize,
+    level: &'static Level,
+    /// Bugs still crawling, and how many were squashed.
+    pub bugs: Vec<Bug>,
+    pub squashed: usize,
+    /// Commands the bugs have crawled for.
+    pub crawled: usize,
     pub editor: Editor,
     pub gems: Vec<(Pos, bool)>,
     pub keys: Vec<Key>,
@@ -81,11 +105,20 @@ pub fn stars(keys: usize, par: usize) -> u8 {
 
 impl Session {
     pub fn new(index: usize) -> Self {
-        let level = &LEVELS[index];
+        Self::custom(&LEVELS[index], index)
+    }
+
+    /// A level from outside the campaign (a daily puzzle, a drill), with
+    /// the keys of campaign isle `index` and before.
+    pub fn custom(level: &'static Level, index: usize) -> Self {
         let mut editor = Editor::new(level.text()).with_cursor(level.start());
         editor.files = level.files().iter().map(|(n, t)| (n.to_string(), t.to_string())).collect();
         let mut session = Session {
             index,
+            level,
+            bugs: level.bugs(),
+            squashed: 0,
+            crawled: 0,
             editor,
             gems: level.gems().into_iter().map(|p| (p, false)).collect(),
             keys: Vec::new(),
@@ -105,11 +138,21 @@ impl Session {
     }
 
     pub fn level(&self) -> &'static Level {
-        &LEVELS[self.index]
+        self.level
+    }
+
+    /// Whether this is a campaign isle (not a daily puzzle or a drill).
+    pub fn in_campaign(&self) -> bool {
+        std::ptr::eq(self.level, &LEVELS[self.index])
     }
 
     pub fn par(&self) -> usize {
         self.level().par()
+    }
+
+    /// The keys learned so far, as an unlock list.
+    pub fn allowed(&self) -> &str {
+        &self.allowed
     }
 
     pub fn stars(&self) -> u8 {
@@ -273,6 +316,9 @@ impl Session {
         if let Some(gem) = self.collect() {
             event = Event::Gem(gem);
         }
+        if let Some(at) = self.crawl() {
+            event = Event::Squashed(at);
+        }
         if self.check_complete() {
             event = Event::Complete;
         } else if let Some(budget) = self.level().budget()
@@ -284,6 +330,57 @@ impl Session {
             event = Event::Complete;
         }
         event
+    }
+
+    /// A command was completed: a bug the cursor stands on is squashed;
+    /// the others crawl a tile, and every HATCH_EVERY commands each hatches
+    /// a twin.
+    fn crawl(&mut self) -> Option<Pos> {
+        // Typing a command line or text is one command, done when it ends.
+        let typing = matches!(self.editor.mode, Mode::Command { .. } | Mode::Insert | Mode::Replace | Mode::Confirm);
+        if self.bugs.is_empty() || !self.editor.pending().is_empty() || typing {
+            return None;
+        }
+        let at = self.editor.cursor;
+        let squash = |bugs: &mut Vec<Bug>| {
+            let before = bugs.len();
+            bugs.retain(|b| b.at != at);
+            before - bugs.len()
+        };
+        let mut caught = squash(&mut self.bugs);
+        let lines = &self.editor.lines;
+        let traps = &self.traps;
+        for bug in &mut self.bugs {
+            let len = lines.get(bug.at.row).map_or(0, |l| l.len());
+            if len == 0 {
+                continue;
+            }
+            bug.at.col = bug.at.col.min(len - 1);
+            let open = |col: isize| col >= 0 && (col as usize) < len && !traps.contains(&Pos { row: bug.at.row, col: col as usize });
+            let ahead = bug.at.col as isize + bug.dir as isize;
+            if !open(ahead) {
+                bug.dir = -bug.dir;
+            }
+            let ahead = bug.at.col as isize + bug.dir as isize;
+            if open(ahead) {
+                bug.at.col = ahead as usize;
+            }
+        }
+        caught += squash(&mut self.bugs);
+        self.crawled += 1;
+        if self.crawled % HATCH_EVERY == 0 {
+            let twins: Vec<Bug> = self.bugs.iter().map(|b| Bug { at: b.at, dir: -b.dir }).collect();
+            for twin in twins {
+                if self.bugs.len() < MAX_BUGS {
+                    self.bugs.push(twin);
+                }
+            }
+            if !self.bugs.is_empty() {
+                self.message = "The bugs hatched! Catch them faster".into();
+            }
+        }
+        self.squashed += caught;
+        (caught > 0).then_some(at)
     }
 
     fn drop_cmdline_keys(&mut self) {
@@ -314,6 +411,7 @@ impl Session {
 
     fn check_complete(&mut self) -> bool {
         if self.gems_left() == 0
+            && self.bugs.is_empty()
             && self.goal_met()
             && self.editor.mode == Mode::Normal
             && self.editor.pending().is_empty()
@@ -494,6 +592,21 @@ mod tests {
         assert_eq!(last, Event::Complete);
         assert!(s.complete && !s.cleared());
         assert_eq!(s.missed, vec!["finish within 10 keys".to_string()]);
+    }
+
+    #[test]
+    #[ignore]
+    fn probe_bugs() {
+        let title = std::env::var("ISLE").unwrap();
+        let keys = std::env::var("KEYS").unwrap();
+        let i = LEVELS.iter().position(|l| l.title == title).unwrap();
+        let mut s = Session::new(i);
+        println!("start {:?} bugs {:?}", s.editor.cursor, s.bugs);
+        for k in parse_keys(&keys) {
+            let ev = s.press(k);
+            println!("{k} -> {ev:?} cursor {:?} bugs {:?} {}", s.editor.cursor, s.bugs.iter().map(|b| (b.at.row, b.at.col, b.dir)).collect::<Vec<_>>(), s.message);
+        }
+        println!("complete {} missed {:?} keys {}", s.complete, s.missed, s.keys.len());
     }
 
     #[test]

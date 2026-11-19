@@ -9,7 +9,7 @@ pub struct Habit {
     pub tip: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Coach {
     /// Completed normal-mode commands, as typed (`l`, `4j`, `dw`, `i`).
     tokens: Vec<String>,
