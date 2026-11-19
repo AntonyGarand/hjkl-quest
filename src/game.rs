@@ -32,6 +32,18 @@ pub struct Session {
 /// The game's own `:` commands: always available, and free.
 pub const GAME_COMMANDS: &[&str] = &["q", "q!", "wq", "x", "levels", "menu", "e!", "restart", "r", "n", "next", "mute", "sound", "help", "h", "w"];
 
+/// How a key of an unlock list reads: `w`, or `Ctrl-a`.
+pub fn key_name(c: char) -> String {
+    match Key::from_raw(c) {
+        Key::Char(c) => c.to_string(),
+        Key::CtrlA => "Ctrl-a".into(),
+        Key::CtrlX => "Ctrl-x".into(),
+        Key::CtrlV => "Ctrl-v".into(),
+        Key::CtrlR => "Ctrl-r".into(),
+        other => other.to_string(),
+    }
+}
+
 pub fn is_game_command(cmd: &str) -> bool {
     GAME_COMMANDS.contains(&cmd.trim())
 }
@@ -86,39 +98,42 @@ impl Session {
     }
 
     fn is_allowed(&self, key: Key) -> Result<(), char> {
-        let normalish = matches!(self.editor.mode, Mode::Normal | Mode::Visual { .. });
+        let mode = self.editor.mode;
+        let normalish = matches!(mode, Mode::Normal | Mode::Visual { .. } | Mode::Block);
         if !normalish || self.editor.awaiting_char() {
             return Ok(());
         }
+        let pending = self.editor.pending();
         match key {
             Key::Esc => Ok(()),
             // Undo and redo are always there, so a wrong edit never strands
             // the player before the isle that teaches them properly.
             Key::CtrlR => Ok(()),
-            Key::Char('u') if self.editor.mode == Mode::Normal => Ok(()),
+            Key::Char('u') if mode == Mode::Normal && pending.is_empty() => Ok(()),
             Key::Enter | Key::Backspace => Err('⏎'),
             // The command line always opens, for the game's own commands;
             // real ex commands wait until `:` is learned.
-            Key::Char(':') if self.editor.mode == Mode::Normal => Ok(()),
+            Key::Char(':') if mode == Mode::Normal => Ok(()),
+            // A macro being recorded can always be stopped.
+            Key::Char('q') if self.editor.recording_macro().is_some() && pending.is_empty() => Ok(()),
             Key::Char(c) => {
-                let pending = self.editor.pending();
                 if c == '0' && self.editor.in_count() {
                     return Ok(());
                 }
                 // After an operator, i and a pick text objects, the
                 // operator's own key repeats it (dd) and g starts gg.
-                let after_operator = pending.ends_with(['d', 'c', 'y'])
-                    || pending.chars().last().is_some_and(|l| l.is_ascii_digit()) && pending.contains(['d', 'c', 'y']);
+                let op = pending.trim_end_matches(|c: char| c.is_ascii_digit());
+                let after_operator = op.ends_with(['d', 'c', 'y', '>', '<']) || op.ends_with("gu") || op.ends_with("gU") || op.ends_with("g~");
                 if after_operator && (c == 'i' || c == 'a') {
                     return Ok(());
                 }
-                if pending.ends_with(['i', 'a']) && pending.contains(['d', 'c', 'y']) {
-                    return Ok(());
-                }
-                if matches!(self.editor.mode, Mode::Visual { .. }) && matches!(c, 'i' | 'a' | 'o' | 'd' | 'x' | 'y' | 'c' | 's' | 'u' | 'U' | '~' | 'J') {
+                if self.editor.in_visual() && matches!(c, 'i' | 'a' | 'o' | 'd' | 'x' | 'y' | 'c' | 's' | 'u' | 'U' | '~' | 'J') {
                     return Ok(());
                 }
                 if self.allowed.contains(c) { Ok(()) } else { Err(c) }
+            }
+            other => {
+                if self.allowed.contains(other.raw()) { Ok(()) } else { Err(other.raw()) }
             }
         }
     }
@@ -132,11 +147,11 @@ impl Session {
             self.message = if c == '⏎' {
                 "That key does nothing in normal mode".into()
             } else {
-                format!("You haven't learned `{c}` yet")
+                format!("You haven't learned `{}` yet", key_name(c))
             };
             return Event::Locked(c);
         }
-        let opens_cmdline = key == Key::Char(':') && self.editor.mode == Mode::Normal && self.editor.pending().is_empty();
+        let opens_cmdline = key == Key::Char(':') && (self.editor.mode == Mode::Normal || self.editor.in_visual()) && self.editor.pending().is_empty();
         let in_cmdline = self.editor.mode == (Mode::Command { search: false });
         if opens_cmdline {
             self.cmd_start = Some(self.keys.len());
@@ -295,7 +310,7 @@ mod tests {
         assert_eq!(s.keys.len(), 1);
         assert_eq!(s.editor.mode, Mode::Normal);
         // Once learned, ex keys count as in vim golf.
-        let mut s = Session::new(LEVELS.len() - 2);
+        let mut s = Session::new(18);
         for k in parse_keys(":%s/foo/baz/g<CR>") {
             s.press(k);
         }

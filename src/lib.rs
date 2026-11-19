@@ -6,6 +6,7 @@
 //! Native Shell.
 
 pub mod audio;
+pub mod diff;
 pub mod game;
 pub mod levels;
 pub mod vim;
@@ -16,7 +17,7 @@ use std::rc::Rc;
 
 
 use nsh_core::element::CanvasArg;
-use nsh_core::canvas::{CanvasGradient, CanvasTextAlign, CanvasTextBaseline};
+use nsh_core::canvas::{CanvasGradient, CanvasTextAlign, CanvasTextBaseline, LineCap};
 use nsh_core::storage::Storage;
 use nsh_core::prelude::*;
 
@@ -104,7 +105,8 @@ const GLYPH: u32 = 0xf6f1e3;
 fn mode_color(e: &vim::Editor) -> u32 {
     match e.mode {
         Mode::Insert => 0x7dffa8,
-        Mode::Visual { .. } => 0xc9a2ff,
+        Mode::Visual { .. } | Mode::Block => 0xc9a2ff,
+        Mode::Replace => 0xff8f8f,
         Mode::Command { .. } => 0x8ec5ff,
         Mode::Normal if !e.pending().is_empty() => 0xffb86b,
         Mode::Normal => 0xfff3b0,
@@ -239,6 +241,9 @@ fn key_table() -> Vec<(String, Key)> {
     keys.push(("enter".into(), Key::Enter));
     keys.push(("backspace".into(), Key::Backspace));
     keys.push(("ctrl+r".into(), Key::CtrlR));
+    keys.push(("ctrl+a".into(), Key::CtrlA));
+    keys.push(("ctrl+x".into(), Key::CtrlX));
+    keys.push(("ctrl+v".into(), Key::CtrlV));
     keys
 }
 
@@ -431,74 +436,38 @@ fn place_hero(ui: Ui, motion: &Motion, animate: bool) {
 
 // ------------------------------------------------------------------ drawing
 
-/// The longest common subsequence of `a` and `b`, as pairs of indices.
-fn lcs<T: PartialEq>(a: &[T], b: &[T]) -> Vec<(usize, usize)> {
-    let (n, m) = (a.len(), b.len());
-    let mut dp = vec![vec![0u16; m + 1]; n + 1];
-    for i in (0..n).rev() {
-        for j in (0..m).rev() {
-            dp[i][j] = if a[i] == b[j] { dp[i + 1][j + 1] + 1 } else { dp[i + 1][j].max(dp[i][j + 1]) };
-        }
-    }
-    let (mut i, mut j, mut out) = (0, 0, Vec::new());
-    while i < n && j < m {
-        if a[i] == b[j] {
-            out.push((i, j));
-            i += 1;
-            j += 1;
-        } else if dp[i + 1][j] >= dp[i][j + 1] {
-            i += 1;
-        } else {
-            j += 1;
-        }
-    }
-    out
+/// The goal of an editing level, as lines of characters.
+fn goal_lines(session: &Session) -> Option<Vec<Vec<char>>> {
+    session.level().goal_text().map(|g| g.split('\n').map(|l| l.chars().collect()).collect())
 }
 
-/// Which characters of the buffer are not where the goal wants them: lines
-/// are matched first, then the characters of the lines that differ.
-fn wrong_marks(buf: &[Vec<char>], goal: &[Vec<char>]) -> Vec<Vec<bool>> {
-    let mut wrong: Vec<Vec<bool>> = buf.iter().map(|l| vec![true; l.len()]).collect();
-    let same = lcs(buf, goal);
-    // Between matched lines, pair the leftover lines in order.
-    let mut anchors = same.clone();
-    anchors.push((buf.len(), goal.len()));
-    let (mut bi, mut gi) = (0, 0);
-    for (ba, ga) in anchors {
-        let (bs, gs) = (bi..ba, gi..ga);
-        for (b, g) in bs.clone().zip(gs.clone()) {
-            for (i, _) in lcs(&buf[b], &goal[g]) {
-                wrong[b][i] = false;
-            }
-        }
-        if ba < buf.len() {
-            wrong[ba].iter_mut().for_each(|w| *w = false);
-        }
-        bi = ba + 1;
-        gi = ga + 1;
-    }
-    wrong
+fn session_diff(session: &Session) -> Option<diff::Diff> {
+    goal_lines(session).map(|g| diff::diff(&session.editor.lines, &g))
 }
+
+/// Whether the cursor's selection covers `p`.
+fn is_selected(e: &vim::Editor, p: Pos) -> bool {
+    match e.mode {
+        Mode::Visual { line } => {
+            let (s, t) = if e.anchor <= e.cursor { (e.anchor, e.cursor) } else { (e.cursor, e.anchor) };
+            if line { p.row >= s.row && p.row <= t.row } else { p >= s && p <= t }
+        }
+        Mode::Block => {
+            let (r0, r1, c0, c1, to_end) = e.block_rect();
+            p.row >= r0 && p.row <= r1 && p.col >= c0 && (to_end || p.col <= c1)
+        }
+        _ => false,
+    }
+}
+
+/// Where missing text shows, in amber.
+const MISSING: u32 = 0xffb44c;
 
 fn draw_world(session: &Session) -> Painter {
     let e = &session.editor;
-    let goal: Option<Vec<Vec<char>>> = session.level().goal_text().map(|g| g.split('\n').map(|l| l.chars().collect()).collect());
-    let selection = match e.mode {
-        Mode::Visual { line } => {
-            let (s, t) = if e.anchor <= e.cursor { (e.anchor, e.cursor) } else { (e.cursor, e.anchor) };
-            Some((s, t, line))
-        }
-        _ => None,
-    };
-    let selected = |p: Pos| match selection {
-        Some((s, t, true)) => p.row >= s.row && p.row <= t.row,
-        Some((s, t, false)) => p >= s && p <= t,
-        None => false,
-    };
-
-    let wrong = goal.as_ref().map(|g| wrong_marks(&e.lines, g));
+    let goal = goal_lines(session);
+    let diff = goal.as_ref().map(|g| diff::diff(&e.lines, g));
     let mut painter = Painter::new();
-    let rows = e.lines.len().max(goal.as_ref().map_or(0, |g| g.len()));
 
     // Soft shadow of the island on the clouds below.
     for row in 0..e.lines.len() {
@@ -510,32 +479,167 @@ fn draw_world(session: &Session) -> Painter {
             .ellipse_at(x + len as f32 * CW / 2.0 + 10.0, y + CH + DEPTH + 22.0, len as f32 * CW / 2.0 + 8.0, 7.0)
             .fill();
     }
+    painter = draw_rulers(painter, session);
 
-    for row in 0..rows {
-        let line: &[char] = e.lines.get(row).map_or(&[], |l| l.as_slice());
-        let goal_line: Option<&[char]> = goal.as_ref().map(|g| g.get(row).map_or(&[][..], |l| l.as_slice()));
-        let width = line.len().max(goal_line.map_or(0, |g| g.len()));
-        if line.is_empty() && row < e.lines.len() {
-            painter = draw_tile(painter, Pos { row, col: 0 }, None, TileLook::Plank);
+    for (row, line) in e.lines.iter().enumerate() {
+        if line.is_empty() {
+            let look = if is_selected(e, Pos { row, col: 0 }) { TileLook::Selected } else { TileLook::Plank };
+            painter = draw_tile(painter, Pos { row, col: 0 }, None, look);
         }
-        for col in 0..width {
+        for (col, &ch) in line.iter().enumerate() {
             let p = Pos { row, col };
-            let c = line.get(col).copied();
-            let want = goal_line.and_then(|g| g.get(col).copied());
-            let is_wrong = wrong.as_ref().is_some_and(|w| w.get(row).and_then(|l| l.get(col)).copied().unwrap_or(false));
-            let look = match c {
-                None => {
-                    // Ghosts only where the goal has lines the buffer lacks.
-                    if let (Some(w), true) = (want, row >= e.lines.len()) {
-                        painter = draw_ghost(painter, p, w);
-                    }
-                    continue;
-                }
-                Some(_) if selected(p) => TileLook::Selected,
-                Some(_) if is_wrong => TileLook::Wrong,
-                Some(ch) => TileLook::of(ch),
+            let wrong = diff.as_ref().is_some_and(|d| d.wrong[row][col]);
+            let look = if is_selected(e, p) {
+                TileLook::Selected
+            } else if wrong {
+                TileLook::Wrong
+            } else if goal.is_some() && ch == '.' {
+                // In text, a period is a character to see, not a flower.
+                TileLook::Amber
+            } else {
+                TileLook::of(ch)
             };
-            painter = draw_tile(painter, p, c, look);
+            painter = draw_tile(painter, p, Some(ch), look);
+        }
+    }
+
+    let (Some(diff), Some(goal)) = (diff, goal) else { return painter };
+    // Lines missing at the end show as ghost rows below the isle; lines
+    // missing in between as a seam where they go.
+    let mut extra = 0;
+    let mut seams: Vec<(usize, Vec<String>)> = Vec::new();
+    for &(before, g) in &diff.missing_lines {
+        if before >= e.lines.len() {
+            let row = e.lines.len() + extra;
+            extra += 1;
+            if goal[g].is_empty() {
+                painter = draw_ghost(painter, Pos { row, col: 0 }, ' ');
+            }
+            for (col, &want) in goal[g].iter().enumerate() {
+                painter = draw_ghost(painter, Pos { row, col }, want);
+            }
+        } else {
+            let text: String = goal[g].iter().collect();
+            match seams.last_mut() {
+                Some((b, texts)) if *b == before => texts.push(text),
+                _ => seams.push((before, vec![text])),
+            }
+        }
+    }
+    for (before, texts) in seams {
+        let shown: Vec<String> = texts.iter().map(|t| if t.is_empty() { "(empty line)".into() } else { t.clone() }).collect();
+        painter = draw_seam(painter, before, &e.lines, &format!("+ {}", shown.join("  ⏎ ")));
+    }
+    // Full text on the cursor's row; elsewhere how much, to keep busy
+    // isles readable.
+    for (at, text) in &diff.inserts {
+        painter = draw_insert(painter, *at, text, at.row == e.cursor.row);
+    }
+    painter
+}
+
+/// A small label in a rounded pill, its left edge at `x`, centred on `y`.
+fn draw_pill(painter: Painter, x: f32, y: f32, label: &str, color: u32) -> Painter {
+    let w = label.chars().count() as f32 * 7.4 + 12.0;
+    painter
+        .fill_color(hexa(0x1a0f05, 0.88))
+        .stroke_color(hexa(color, 0.95))
+        .line_width(1.2)
+        .begin_path()
+        .round_rect(Bounds { origin: point(px(x), px(y - 9.0)), size: size(px(w), px(18.0)) }, px(9.0))
+        .fill()
+        .stroke()
+        .font("700 12px monospace")
+        .text_align(CanvasTextAlign::Left)
+        .text_baseline(CanvasTextBaseline::Middle)
+        .fill_color(hex(color))
+        .fill_text(label, x + 6.0, y + 0.5)
+}
+
+/// Missing text inside a line: a glowing slot where it goes, and what.
+fn draw_insert(painter: Painter, at: Pos, text: &str, full: bool) -> Painter {
+    let (x, y) = tile_origin(at);
+    let label = if full { format!("+{}", text.replace(' ', "␣")) } else { format!("+{}", text.chars().count()) };
+    let painter = painter
+        .stroke_color(hexa(MISSING, 0.35))
+        .line_width(7.0)
+        .line_cap(LineCap::Round)
+        .begin_path()
+        .move_to(x + SKEW, y + 2.0)
+        .line_to(x + 1.0, y + CH - 2.0)
+        .stroke()
+        .stroke_color(hex(MISSING))
+        .line_width(2.5)
+        .begin_path()
+        .move_to(x + SKEW, y + 2.0)
+        .line_to(x + 1.0, y + CH - 2.0)
+        .stroke();
+    let w = label.chars().count() as f32 * 7.4 + 12.0;
+    draw_pill(painter, x + SKEW - w / 2.0, y - 11.0, &label, MISSING)
+}
+
+/// Whole lines missing before buffer row `before`: a dashed seam between
+/// the rows, and their text.
+fn draw_seam(painter: Painter, before: usize, lines: &[Vec<char>], label: &str) -> Painter {
+    let width = lines[before.saturating_sub(1)..=before.min(lines.len() - 1)].iter().map(|l| l.len()).max().unwrap_or(1).max(1);
+    let (x, y) = tile_origin(Pos { row: before, col: 0 });
+    let painter = painter
+        .stroke_color(hex(MISSING))
+        .line_width(2.5)
+        .line_dash(&[px(6.0), px(4.0)])
+        .begin_path()
+        .move_to(x + SKEW, y)
+        .line_to(x + SKEW + width as f32 * CW, y)
+        .stroke()
+        .line_dash(&[]);
+    draw_pill(painter, x + SKEW + width as f32 * CW + 8.0, y, label, MISSING)
+}
+
+/// Line numbers down the left (absolute, and how far each line is from
+/// the cursor, for counts like 5j) and column numbers along the top.
+fn draw_rulers(painter: Painter, session: &Session) -> Painter {
+    let e = &session.editor;
+    let cur = e.cursor;
+    let accent = mode_color(e);
+    let mut painter = painter.text_baseline(CanvasTextBaseline::Middle);
+    for row in 0..e.lines.len() {
+        let (x, y) = tile_origin(Pos { row, col: 0 });
+        let (gx, gy) = (x + SKEW / 2.0 - 8.0, y + CH / 2.0 + 0.5);
+        let here = row == cur.row;
+        painter = painter
+            .font(if here { "700 13px monospace" } else { "500 12px monospace" })
+            .text_align(CanvasTextAlign::Right)
+            .fill_color(if here { hex(accent) } else { hexa(0xece6ff, 0.38) })
+            .fill_text(&(row + 1).to_string(), gx - 22.0, gy);
+        if !here {
+            let rel = row.abs_diff(cur.row);
+            painter = painter
+                .font("700 11px monospace")
+                .fill_color(hexa(0xfff3b0, 0.7))
+                .fill_text(&format!("{}{}", if row < cur.row { '↑' } else { '↓' }, rel), gx, gy);
+        }
+    }
+    // Columns along the top edge of the first row.
+    let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(0);
+    let (_, top) = tile_origin(Pos { row: 0, col: 0 });
+    let y = top - 30.0;
+    for col in 0..cols {
+        let (x, _) = tile_origin(Pos { row: 0, col });
+        let cx = x + SKEW + CW / 2.0;
+        let n = col + 1;
+        let here = col == cur.col;
+        let major = n == 1 || n % 5 == 0;
+        painter = painter
+            .fill_color(hexa(0xece6ff, if n % 10 == 0 { 0.5 } else { 0.22 }))
+            .begin_path()
+            .arc(cx, y + 11.0, if major { 1.8 } else { 1.1 }, 0.0, TAU)
+            .fill();
+        if major || here {
+            painter = painter
+                .font(if here { "700 12px monospace" } else { "500 11px monospace" })
+                .text_align(CanvasTextAlign::Center)
+                .fill_color(if here { hex(accent) } else { hexa(0xece6ff, if n % 10 == 0 { 0.6 } else { 0.38 }) })
+                .fill_text(&n.to_string(), cx, y);
         }
     }
     painter
@@ -806,13 +910,18 @@ fn draw_hero(session: &Session, motion: &Motion) -> Painter {
     painter
 }
 
-/// The minimap's cell size for a buffer of `rows` × `cols`.
-/// The minimap's cell width and height for a buffer of `rows` × `cols`.
+/// The minimap's cell width and height for a buffer of `rows` × `cols`:
+/// big enough for letters on small isles, a few pixels on large ones.
 fn minimap_cell(rows: usize, cols: usize) -> (f32, f32) {
     let rows = rows.max(1) as f32;
-    let w = (240.0 / cols.max(1) as f32).min(120.0 / rows).clamp(2.0, 9.0);
-    let h = (w * 1.3).max(11.0).min((120.0 / rows).max(3.0));
+    let w = (280.0 / cols.max(1) as f32).min(150.0 / rows).clamp(2.0, 11.0);
+    let h = (w * 1.4).max(11.0).min((150.0 / rows).max(3.0));
     (w, h)
+}
+
+/// Whether the minimap's cells are big enough to print their letters.
+fn minimap_letters(cw: f32, ch: f32) -> bool {
+    cw >= 6.0 && ch >= 8.0
 }
 
 fn minimap_size(session: &Session) -> (f32, f32) {
@@ -833,18 +942,57 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
     let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(1).max(1);
     let (cw, ch) = minimap_cell(rows, cols);
     let (mw, mh) = (cols as f32 * cw, rows as f32 * ch);
-    let goal: Option<Vec<Vec<char>>> = session.level().goal_text().map(|g| g.split('\n').map(|l| l.chars().collect()).collect());
-    let wrong = goal.as_ref().map(|g| wrong_marks(&e.lines, g));
-    let mut painter = Painter::new();
+    let goal = goal_lines(session);
+    let diff = session_diff(session);
+    let letters = minimap_letters(cw, ch);
+    let font = format!("700 {}px monospace", (ch * 0.78).min(cw * 1.45).floor());
+    let mut painter = Painter::new()
+        .font(&font)
+        .text_align(CanvasTextAlign::Center)
+        .text_baseline(CanvasTextBaseline::Middle);
     for (row, line) in e.lines.iter().enumerate() {
         let y = row as f32 * ch;
         if line.is_empty() {
             painter = painter.fill_color(hexa(WOOD, 0.9)).fill_rect(0.0, y + 1.0, cw - 0.5, ch - 2.0);
         }
         for (col, &c) in line.iter().enumerate() {
-            let is_wrong = wrong.as_ref().is_some_and(|w| w[row].get(col).copied().unwrap_or(false));
-            let color = if is_wrong { EMBER } else { TileLook::of(c).color() };
+            let p = Pos { row, col };
+            let is_wrong = diff.as_ref().is_some_and(|d| d.wrong[row][col]);
+            let color = if is_selected(e, p) {
+                SELECT
+            } else if is_wrong {
+                EMBER
+            } else if goal.is_some() && c == '.' {
+                AMBER
+            } else {
+                TileLook::of(c).color()
+            };
             painter = painter.fill_color(hex(color)).fill_rect(col as f32 * cw, y, cw - 0.5, ch - 0.5);
+            if letters && !c.is_whitespace() && !(goal.is_none() && c == '.') {
+                painter = painter.fill_color(hexa(GLYPH, 0.95)).fill_text(&c.to_string(), col as f32 * cw + cw / 2.0, y + ch / 2.0 + 0.5);
+            }
+        }
+    }
+    // What's missing: ghost rows at the end, slots where text goes.
+    if let (Some(diff), Some(goal)) = (&diff, &goal) {
+        let mut extra = 0;
+        for &(before, g) in &diff.missing_lines {
+            if before < e.lines.len() {
+                painter = painter.fill_color(hex(MISSING)).fill_rect(0.0, before as f32 * ch - 1.0, mw, 2.0);
+                continue;
+            }
+            let y = (e.lines.len() + extra) as f32 * ch;
+            extra += 1;
+            for (col, &c) in goal[g].iter().enumerate().take(cols) {
+                let x = col as f32 * cw;
+                painter = painter.stroke_color(hexa(MISSING, 0.6)).line_width(1.0).begin_path().move_to(x + 0.5, y + 0.5).line_to(x + cw - 1.0, y + 0.5).line_to(x + cw - 1.0, y + ch - 1.0).line_to(x + 0.5, y + ch - 1.0).close_path().stroke();
+                if letters && !c.is_whitespace() {
+                    painter = painter.fill_color(hexa(MISSING, 0.8)).fill_text(&c.to_string(), x + cw / 2.0, y + ch / 2.0 + 0.5);
+                }
+            }
+        }
+        for (at, _) in &diff.inserts {
+            painter = painter.fill_color(hex(MISSING)).fill_rect(at.col as f32 * cw - 1.0, at.row as f32 * ch - 1.0, 2.5, ch + 1.0);
         }
     }
     for &(p, got) in &session.gems {
@@ -859,6 +1007,9 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
         .stroke_color(hex(0xffffff))
         .line_width(1.0)
         .fill_rect(cur.col as f32 * cw - 1.0, cur.row as f32 * ch - 1.0, cw + 1.5, ch + 1.5);
+    if letters && let Some(c) = e.char_at(cur).filter(|c| !c.is_whitespace()) {
+        painter = painter.fill_color(hex(0x1a1430)).fill_text(&c.to_string(), cur.col as f32 * cw + cw / 2.0, cur.row as f32 * ch + ch / 2.0 + 0.5);
+    }
 
     // The stage's window onto the board, mapped back to rows and columns.
     let (vw, vh) = stage;
@@ -1097,7 +1248,23 @@ pub fn App() -> impl IntoElement {
 }
 
 fn menu_screen(ui: Ui) -> impl IntoElement {
+    // Each row's ref, to keep the chosen isle in view as j and k move.
+    let refs: Rc<Vec<ElementRef>> = Rc::new(LEVELS.iter().map(|_| element_ref()).collect());
+    let reveal = refs.clone();
+    effect(move || {
+        ui.tick.get();
+        let selected = with_state(|s| match s.screen {
+            Screen::Menu { selected } => Some(selected),
+            Screen::Play(_) => None,
+        });
+        if let Some(i) = selected {
+            let mut options = RevealOptions::default();
+            options.vertical = ScrollAlignment::Nearest;
+            reveal[i].reveal(options);
+        }
+    });
     let rows = LEVELS.iter().enumerate().map(move |(i, level)| {
+        let row_ref = refs[i].clone();
         let new_chapter = i == 0 || LEVELS[i - 1].chapter != level.chapter;
         view()
             .child(new_chapter.then(|| {
@@ -1129,6 +1296,7 @@ fn menu_screen(ui: Ui) -> impl IntoElement {
                         if sel { hexa(0xfff3b0, 0.5) } else { hexa(0xffffff, 0.0) }
                     })
                     .cursor_pointer()
+                    .element_ref(&row_ref)
                     .on_press(move || {
                         with_state(|s| s.screen = Screen::Play(Box::new(Session::new(i))));
                         ui.scene.update(|s| *s += 1);
@@ -1137,7 +1305,7 @@ fn menu_screen(ui: Ui) -> impl IntoElement {
                     .child(text(level.title).text_size(px(15.0)).flex_1())
                     .child(
                         view().flex_row().gap_1().children(level.unlock.chars().take(6).map(|c| {
-                            text(c.to_string()).font_family(MONO).text_size(px(12.0)).text_color(hexa(0xfff3b0, 0.75))
+                            text(game::key_name(c)).font_family(MONO).text_size(px(12.0)).text_color(hexa(0xfff3b0, 0.75))
                         })),
                     )
                     .child(
@@ -1398,14 +1566,27 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
     // On narrow screens the lesson panel folds into a strip of its commands.
     let strip = dynamic(move || {
         (ui.window.get().0 < 980.0).then(|| {
-            view().flex_row().flex_wrap().gap_2().items_center().children(level.teaches.iter().map(|(keys, what)| {
+            let chips = view().flex_row().flex_wrap().gap_2().items_center().children(level.teaches.iter().map(|(keys, what)| {
                 view()
                     .flex_row()
                     .gap_1()
                     .items_center()
                     .child(chip(*keys, 0xfff3b0))
                     .child(text(*what).text_size(px(12.0)).text_color(hexa(0xece6ff, 0.7)).mr(px(6.0)))
-            }))
+            }));
+            let goal = level.goal_text().map(|_| {
+                view()
+                    .flex_row()
+                    .gap_3()
+                    .items_start()
+                    .px(px(10.0))
+                    .py(px(6.0))
+                    .rounded(px(8.0))
+                    .bg(hexa(0x000000, 0.35))
+                    .child(text("GOAL").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(3.0)))
+                    .child(view().flex_1().child(goal_view(ui, 12.0)))
+            });
+            view().gap_2().child(chips).child(goal)
         })
     });
     view()
@@ -1420,7 +1601,7 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                 .flex_row()
                 .gap_4()
                 .child(view().flex_1().gap_2().child(stage).child(trail))
-                .child(dynamic(move || (ui.window.get().0 >= 980.0).then(|| side_panel(index)))),
+                .child(dynamic(move || (ui.window.get().0 >= 980.0).then(|| side_panel(index, ui)))),
         )
         .into_element()
 }
@@ -1453,6 +1634,8 @@ fn status_line(ui: Ui) -> impl IntoElement {
                     Mode::Insert => "-- INSERT --".to_string(),
                     Mode::Visual { line: false } => "-- VISUAL --".to_string(),
                     Mode::Visual { line: true } => "-- VISUAL LINE --".to_string(),
+                    Mode::Block => "-- VISUAL BLOCK --".to_string(),
+                    Mode::Replace => "-- REPLACE --".to_string(),
                     Mode::Command { .. } => "COMMAND".to_string(),
                 })
                 .unwrap_or_default()
@@ -1486,7 +1669,11 @@ fn status_line(ui: Ui) -> impl IntoElement {
         .child(
             text(move || {
                 ui.tick.get();
-                session_value(|s| s.editor.pending()).unwrap_or_default()
+                session_value(|s| match s.editor.recording_macro() {
+                    Some(r) => format!("recording @{r}  {}", s.editor.pending()),
+                    None => s.editor.pending(),
+                })
+                .unwrap_or_default()
             })
             .font_family(MONO)
             .text_size(px(14.0))
@@ -1507,7 +1694,58 @@ fn with_state_toast() -> String {
     STATE.with(|s| s.try_borrow().map(|s| s.toast.clone()).unwrap_or_default())
 }
 
-fn side_panel(index: usize) -> impl IntoElement {
+/// Goal characters already in the buffer.
+const PRESENT: u32 = 0x8fe3a0;
+
+/// The goal text, each character green when the buffer already has it and
+/// amber while it's missing, and a count of what's left to do.
+fn goal_view(ui: Ui, size: f32) -> impl IntoElement {
+    dynamic(move || {
+        ui.tick.get();
+        let (goal, d) = session_value(|s| (goal_lines(s), session_diff(s)))?;
+        let (goal, d) = (goal?, d?);
+        let (have, add, remove) = (d.present_count(), d.missing_count(), d.wrong_count());
+        let rows = goal.into_iter().enumerate().map(move |(g, line)| {
+            let mut runs: Vec<(String, bool)> = Vec::new();
+            for (j, c) in line.iter().enumerate() {
+                let ok = d.present[g][j];
+                // Spaces still to type show as a dot, so they can be seen.
+                let shown = match (*c, ok) {
+                    (' ', true) => '\u{a0}',
+                    (' ', false) => '␣',
+                    (c, _) => c,
+                };
+                match runs.last_mut() {
+                    Some((t, o)) if *o == ok => t.push(shown),
+                    _ => runs.push((shown.to_string(), ok)),
+                }
+            }
+            if line.is_empty() {
+                let missing = d.missing_lines.iter().any(|&(_, mg)| mg == g);
+                runs.push((if missing { "⏎ empty line".into() } else { "\u{a0}".into() }, !missing));
+            }
+            view().flex_row().flex_wrap().children(runs.into_iter().map(move |(t, ok)| {
+                text(t)
+                    .font_family(MONO)
+                    .text_size(px(size))
+                    .line_height(px(size * 1.45))
+                    .font_weight(if ok { FontWeight::NORMAL } else { FontWeight::BOLD })
+                    .text_color(hex(if ok { PRESENT } else { MISSING }))
+            }))
+        });
+        let summary = view()
+            .flex_row()
+            .flex_wrap()
+            .gap_2()
+            .mt(px(6.0))
+            .child(text(format!("✓ {have} in place")).text_size(px(12.0)).text_color(hex(PRESENT)))
+            .child(text(format!("+ {add} to add")).text_size(px(12.0)).text_color(hex(MISSING)))
+            .child(text(format!("✕ {remove} to remove")).text_size(px(12.0)).text_color(hex(0xff8a70)));
+        Some(view().child(view().children(rows)).child(summary))
+    })
+}
+
+fn side_panel(index: usize, ui: Ui) -> impl IntoElement {
     let level = &LEVELS[index];
     let teaches = level.teaches.iter().map(|(keys, what)| {
         view()
@@ -1528,7 +1766,7 @@ fn side_panel(index: usize) -> impl IntoElement {
         .child(text(level.story).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.8)).italic())
         .child(text("NEW COMMANDS").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(4.0)))
         .child(view().gap_2().children(teaches))
-        .child(level.goal_text().map(|goal| {
+        .child(level.goal_text().map(|_| {
             view()
                 .gap_2()
                 .mt(px(4.0))
@@ -1538,7 +1776,13 @@ fn side_panel(index: usize) -> impl IntoElement {
                         .p(px(10.0))
                         .rounded(px(8.0))
                         .bg(hexa(0x000000, 0.35))
-                        .child(text(goal.to_string()).font_family(MONO).text_size(px(13.0)).text_color(hex(0xffd2a8))),
+                        .child(goal_view(ui, 13.0)),
+                )
+                .child(
+                    text("Green is in place, amber still missing; red tiles on the isle are extra.")
+                        .text_size(px(11.5))
+                        .line_height(px(16.0))
+                        .text_color(hexa(0xece6ff, 0.5)),
                 )
         }))
         .child((level.goal.is_none()).then(|| {

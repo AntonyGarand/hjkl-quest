@@ -1,4 +1,4 @@
-//! The campaign: twenty isles of the Buffer Archipelago, each teaching a few
+//! The campaign: thirty-five isles of the Buffer Archipelago, each teaching a few
 //! commands. Every level's `solution` is a vim-golf line: the tests replay it
 //! and check that it solves the level in exactly `par` keystrokes.
 
@@ -526,7 +526,7 @@ no baz here"),
     Level {
         chapter: "VIII · The Summit",
         title: "The Refactor",
-        story: "The final trial: the old function needs a new name, wider types and a typo \
+        story: "The summit's last trial: the old function needs a new name, wider types and a typo \
                 fixed. Use everything you've learned and try to beat par.",
         teaches: &[("all of it", "motions, operators, text objects, dot, :s")],
         unlock: "",
@@ -543,5 +543,410 @@ fn double(x: i64) -> i64 {
 }"),
         solution: "wcwdouble<Esc>:%s/32/64/g<CR>:%s/sl/sul/g<CR>f D",
         tip: "Real vim golf: the shortest known answer often uses a clever substitute.",
+    },
+    // ------------------------------------------------- beyond the summit
+    Level {
+        chapter: "IX · The Vaults",
+        title: "Named Vaults",
+        story: "Below the summit lie the vaults: twenty-six named registers, a hand for \
+                every letter. Carry two things at once without one pushing out the other.",
+        teaches: &[
+            ("\"a  \"b", "name a register before a yank, delete or put: \"add, \"ap"),
+            ("\"0", "the last yank, untouched by later deletes"),
+            ("\"_", "the black hole: delete without losing what you yanked"),
+            ("\"A", "an upper-case name appends to the register"),
+        ],
+        unlock: "\"",
+        map: "
+lamp
+crate
+vault A:
+vault B:",
+        marks: "@",
+        goal: Some("
+vault A:
+lamp
+vault B:
+crate"),
+        solution: "\"add\"bdd\"apj\"bp",
+        tip: "Registers shine when you carry several things at once. Here plain dd and p can beat par: can you find how?",
+    },
+    Level {
+        chapter: "IX · The Vaults",
+        title: "Waymarks",
+        story: "The vault keepers leave waymarks to find their way back. Drop a mark, wander off, \
+                and return to it, or cut everything in between.",
+        teaches: &[
+            ("ma", "set mark a here (any letter a-z)"),
+            ("`a", "jump to mark a, exactly"),
+            ("'a", "jump to the line of mark a"),
+            ("``", "jump back to where you were before the last jump"),
+            ("d`a", "marks are motions: delete up to the mark"),
+        ],
+        unlock: "m`'",
+        map: "
+keep this line
+cut from HERE and keep
+these lines all go
+away completely
+until THERE the rest
+the end",
+        marks: "@",
+        goal: Some("
+keep this line
+cut from the rest
+the end"),
+        solution: "jfHma/the r<CR>d`a",
+        tip: "Search, G and % are jumps: `` brings you back. A visual selection can also do this one, a little shorter.",
+    },
+    Level {
+        chapter: "X · The Clockwork",
+        title: "Tally Marks",
+        story: "The clockwork city counts everything. Why retype a number when you can wind it up \
+                or down?",
+        teaches: &[
+            ("Ctrl-a", "add 1 to the number under or after the cursor"),
+            ("Ctrl-x", "subtract 1"),
+            ("{n}Ctrl-a", "add n: 27 Ctrl-a"),
+        ],
+        unlock: "\u{1}\u{18}",
+        map: "
+apples: 3
+pears: 10
+debt: -4
+year 1999",
+        marks: "@",
+        goal: Some("
+apples: 5
+pears: 1
+debt: 0
+year 2026"),
+        solution: "2<C-a>j9<C-x>j4<C-a>j27<C-a>",
+        tip: "Ctrl-a finds the next number on the line by itself: no need to move onto it first.",
+    },
+    Level {
+        chapter: "X · The Clockwork",
+        title: "Wind-up Golem",
+        story: "A golem repeats whatever you show it. Record your keys once, then let it do the \
+                rest of the list.",
+        teaches: &[
+            ("qa ... q", "record keys into register a, until q again"),
+            ("@a", "play the macro in register a"),
+            ("@@  5@a", "play the last macro again; a count plays it n times"),
+        ],
+        unlock: "q@",
+        map: "
+alice
+bob
+carol
+dave
+erin
+frank",
+        marks: "@",
+        goal: Some("
+\"Alice\",
+\"Bob\",
+\"Carol\",
+\"Dave\",
+\"Erin\",
+\"Frank\","),
+        solution: "qaI\"<Esc>l~A\",<Esc>jq5@a",
+        tip: "End a macro on the next line (j) so it can run again. If a motion fails, the macro stops, so 99@a is safe.",
+    },
+    Level {
+        chapter: "X · The Clockwork",
+        title: "Assembly Line",
+        story: "The recipe needs numbered steps. A macro that copies a line and winds its number \
+                builds the whole list.",
+        teaches: &[("qayyp Ctrl-a q", "a macro that copies and counts"), ("4@a", "four more")],
+        unlock: "",
+        map: "
+step 1: stir",
+        marks: "@",
+        goal: Some("
+step 1: stir
+step 2: stir
+step 3: stir
+step 4: stir
+step 5: stir
+step 6: stir"),
+        solution: "qayyp<C-a>q4@a",
+        tip: "Recording also runs the keys, so the first copy is made while you record.",
+    },
+    Level {
+        chapter: "XI · The Terraces",
+        title: "Terraces",
+        story: "On the terraced hills every line sits at its own depth. Shift whole lines in and \
+                out (shiftwidth is 4 here).",
+        teaches: &[
+            (">>  <<", "indent, or dedent, the line"),
+            (">{motion}", "indent the lines a motion covers: >j, >G, >ip"),
+            ("3>>", "three lines at once"),
+        ],
+        unlock: "<>",
+        map: "
+def tidy(xs):
+for x in xs:
+if x:
+keep(x)
+return xs",
+        marks: "@",
+        goal: Some("
+def tidy(xs):
+    for x in xs:
+        if x:
+            keep(x)
+    return xs"),
+        solution: "j>Gj>jj>>",
+        tip: "Indent the outer block first, then the inner ones: each shift adds to the last.",
+    },
+    Level {
+        chapter: "XI · The Terraces",
+        title: "Shouting Match",
+        story: "The terrace criers argue in capitals. Case operators work like d and c: with any \
+                motion or text object.",
+        teaches: &[
+            ("gU{motion}", "upper-case: gUiw, gU$"),
+            ("gu{motion}", "lower-case"),
+            ("g~{motion}", "toggle case"),
+            ("gUU  guu", "the whole line"),
+        ],
+        unlock: "u",
+        map: "
+const max_size = 10
+WARNING: Do Not Touch
+hello",
+        marks: "@",
+        goal: Some("
+const MAX_SIZE = 10
+warning: do not touch
+HELLO"),
+        solution: "wgUiwjguujgUU",
+        tip: "iw takes the underscore with it: max_size is one word.",
+    },
+    Level {
+        chapter: "XI · The Terraces",
+        title: "Overwrite",
+        story: "The hero board has fixed columns. Replace mode types over the old text instead of \
+                pushing it right, so the columns stay lined up.",
+        teaches: &[("R", "replace mode: every key overwrites a character"), ("<BS>", "in replace mode, brings the old character back")],
+        unlock: "R",
+        map: "
+| name     | hp |
+| ???????? | 00 |",
+        marks: "@",
+        goal: Some("
+| name     | hp |
+| wisp     | 42 |"),
+        solution: "jf?Rwisp    <Esc>f0R42<Esc>",
+        tip: "R is ideal for tables and fixed-width data, where c would shift everything after it.",
+    },
+    Level {
+        chapter: "XII · The Glacier",
+        title: "Ice Columns",
+        story: "The glacier is cut in straight columns. Visual block mode selects a rectangle, \
+                and what you type on its first line appears on all of them.",
+        teaches: &[
+            ("Ctrl-v", "visual block mode: select a column"),
+            ("I  A", "in a block: insert before it, or append after it, on every line"),
+            ("$A", "append at the end of every line, however long"),
+            ("c  d", "change, or delete, the block"),
+        ],
+        unlock: "\u{16}",
+        map: "
+# red = 1
+# green = 2
+# blue = 3",
+        marks: "@",
+        goal: Some("
+let red = 1;
+let green = 2;
+let blue = 3;"),
+        solution: "<C-v>jjlclet <Esc><C-v>jj$A;<Esc>",
+        tip: "The other lines are filled in when you press <Esc>, not while you type.",
+    },
+    Level {
+        chapter: "XII · The Glacier",
+        title: "Next Match",
+        story: "A variable needs a new name, but not where its name is part of another word. \
+                gn selects the next match of your search, so cgn changes it, and . does the next.",
+        teaches: &[
+            ("*", "search the word under the cursor (whole words only)"),
+            ("gn", "select the next match of the last search"),
+            ("cgn", "change the next match; . repeats on the following one"),
+        ],
+        unlock: "",
+        map: "
+let tmp = load();
+print(tmp);
+save(tmp, tmpdir);",
+        marks: "@",
+        goal: Some("
+let data = load();
+print(data);
+save(data, tmpdir);"),
+        solution: "w*cgndata<Esc>..",
+        tip: "cgn with . is like a find-and-replace you confirm one match at a time, skipping any with n.",
+    },
+    Level {
+        chapter: "XII · The Glacier",
+        title: "Tag, You're It",
+        story: "Ice-bound markup and stray paragraphs. Text objects know tags and paragraphs as \
+                well as words and brackets.",
+        teaches: &[
+            ("it  at", "inside, or around, an HTML tag: cit, dat"),
+            ("ip  ap", "a paragraph, or one with the blank lines after it"),
+        ],
+        unlock: "",
+        map: "
+<ul>
+  <li>old</li>
+  <li><b>x</b></li>
+</ul>
+
+junk line
+more junk",
+        marks: "@",
+        goal: Some("
+<ul>
+  <li>new</li>
+  <li></li>
+</ul>"),
+        solution: "jwcitnew<Esc>jdatGdap",
+        tip: "it picks the innermost tag around the cursor; dap at the last paragraph takes the blank lines before it.",
+    },
+    Level {
+        chapter: "XIII · The Archive",
+        title: "Global Decree",
+        story: "The archive's ledgers are a mess. :g runs a command on every line that matches \
+                a pattern; :v on every line that doesn't.",
+        teaches: &[
+            (":g/pat/d", "delete every line containing pat"),
+            (":v/pat/d", "delete every line that doesn't"),
+            (":sort", "sort the lines"),
+        ],
+        unlock: "",
+        map: "
+4 date
+# fruit list
+2 banana
+5 elder
+# sorted soon
+1 apple
+3 cherry
+# end",
+        marks: "@",
+        goal: Some("
+1 apple
+2 banana
+3 cherry
+4 date
+5 elder"),
+        solution: ":g/#/d<CR>:sort<CR>",
+        tip: "Patterns may start with ^ or end with $ to anchor them: :g/^#/d.",
+    },
+    Level {
+        chapter: "XIII · The Archive",
+        title: "Moving Day",
+        story: "Whole sections need to move. Ex commands take a range of lines and move or copy \
+                them in one go.",
+        teaches: &[
+            (":4,6m0", "move lines 4 to 6 to the top (after line 0)"),
+            (":$t0", "copy the last line to the top"),
+            (":'<,'>", "the lines of the visual selection (press : in visual mode)"),
+            (". $ +1 'a", "addresses: this line, the last, offsets, marks"),
+        ],
+        unlock: "",
+        map: "
+## Usage
+run it
+run it fast
+## Install
+get it
+build it
+## License
+MIT",
+        marks: "@",
+        goal: Some("
+MIT
+## Install
+get it
+build it
+## Usage
+run it
+run it fast
+## License
+MIT"),
+        solution: ":4,6m0<CR>:$t0<CR>",
+        tip: "The line numbers on the left are what ranges count with. :m moves, :t copies (:co too).",
+    },
+    Level {
+        chapter: "XIII · The Archive",
+        title: "Normal Order",
+        story: "The scribes want every function name shouted, and only those. :normal types \
+                normal-mode keys on each line that :g finds.",
+        teaches: &[
+            (":norm keys", "run normal-mode keys on each line of the range"),
+            (":g/pat/norm keys", "on each matching line"),
+            (":%norm A;", "append to every line"),
+        ],
+        unlock: "",
+        map: "
+fn load() {}
+// a
+// b
+fn parse() {}
+// c
+fn check() {}
+// d
+// e
+// f
+fn print() {}
+// g
+fn save() {}
+// h
+fn quit() {}",
+        marks: "@",
+        goal: Some("
+fn LOAD() {}
+// a
+// b
+fn PARSE() {}
+// c
+fn CHECK() {}
+// d
+// e
+// f
+fn PRINT() {}
+// g
+fn SAVE() {}
+// h
+fn QUIT() {}"),
+        solution: ":g/fn/norm wgUiw<CR>",
+        tip: ":normal starts each line at its first column and ends insert mode for you.",
+    },
+    Level {
+        chapter: "XIII · The Archive",
+        title: "The Grand Refactor",
+        story: "The archive's last door. Turn an old config into constants: prune it with :g, \
+                then teach a macro the rest. Everything you know is fair game.",
+        teaches: &[("all of it", "registers, macros, blocks, :g, :norm, text objects")],
+        unlock: "",
+        map: "
+// config
+name=hjkl
+size=10
+// old
+debug=true
+trace=true
+// end
+mode=fast",
+        marks: "@",
+        goal: Some("
+const NAME = \"hjkl\";
+const SIZE = \"10\";
+const MODE = \"fast\";"),
+        solution: ":g#//#d<CR>:g/=t/d<CR>ggqaIconst <Esc>wgUiwf=s = \"<Esc>A\";<Esc>jq2@a",
+        tip: "Any punctuation can delimit a pattern: :g#//#d saves escaping the slashes.",
     },
 ];

@@ -25,3 +25,29 @@ test("the golf solution stays hidden until hovered", async () => {
   await app.waitFor("jjlllljjllll");
   expect(app.texts()).not.toContain("hover to reveal");
 });
+
+test("the goal panel counts what is missing", async () => {
+  const app = await open(".", { platform: "web", width: 1280, height: 800 });
+  // Isle 14, Insert Coin: words to add, nothing to remove.
+  for (let i = 0; i < 13; i++) await app.keyboard.press("j");
+  await app.keyboard.press("enter");
+  await app.waitFor("14. Insert Coin");
+  await app.waitFor("+ 16 to add");
+  expect(app.texts()).toContain("✕ 0 to remove");
+  // Appending ":" to the first line leaves one less to add.
+  await app.keyboard.press("shift+a");
+  await app.keyboard.press("shift+;");
+  await app.keyboard.press("escape");
+  await app.waitFor("+ 15 to add");
+});
+
+test("control keys reach the editor", async () => {
+  const app = await open(".", { platform: "web", width: 1280, height: 800 });
+  // Isle 23, Tally Marks: Ctrl-a winds a number up.
+  for (let i = 0; i < 22; i++) await app.keyboard.press("j");
+  await app.keyboard.press("enter");
+  await app.waitFor("23. Tally Marks");
+  await app.keyboard.press("2");
+  await app.keyboard.press("ctrl+a");
+  await app.waitFor("2<C-a>");
+});
