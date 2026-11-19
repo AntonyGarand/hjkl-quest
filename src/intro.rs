@@ -99,10 +99,16 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
             .child(view().flex_row().flex_wrap().gap_3().children(cards))
             .child(text(goal).text_size(px(13.0)).line_height(px(18.0)).text_color(hex(GEM)).mt(px(4.0)))
             .child(
-                text(format!(
-                    "To clear it, use: {}. Reaching the goal without them doesn't count.",
-                    lessons::requirements(level.title).iter().map(|(l, _)| *l).collect::<Vec<_>>().join(" · ")
-                ))
+                text({
+                    let reqs = lessons::requirements(level.title);
+                    let must: Vec<&str> = reqs.iter().filter(|(_, p)| !lessons::optional(p)).map(|(l, _)| *l).collect();
+                    let may: Vec<&str> = reqs.iter().filter(|(_, p)| lessons::optional(p)).map(|(l, _)| *l).collect();
+                    let mut line = format!("To clear it, use: {}. Reaching the goal without them doesn't count.", must.join(" · "));
+                    if !may.is_empty() {
+                        line.push_str(&format!(" Worth a try too: {}.", may.join(" · ")));
+                    }
+                    line
+                })
                 .text_size(px(13.0))
                 .line_height(px(18.0))
                 .text_color(hex(0xffd76b)),

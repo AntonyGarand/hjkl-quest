@@ -101,8 +101,19 @@ pub fn ex_isle() -> usize {
     LEVELS.iter().position(|l| l.unlock.contains(':')).map_or(0, |i| i + 1)
 }
 
+/// The keys learned by isle `index`: those its isle and the ones before
+/// unlock, and the toolkits of the chapters finished before it.
 pub fn unlocked(index: usize) -> String {
-    LEVELS[..=index.min(LEVELS.len() - 1)].iter().map(|l| l.unlock).collect()
+    let index = index.min(LEVELS.len() - 1);
+    let mut keys: String = LEVELS[..=index].iter().map(|l| l.unlock).collect();
+    for k in 0..index {
+        if LEVELS[k + 1].chapter != LEVELS[k].chapter
+            && let Some(c) = crate::story::chapter(LEVELS[k].chapter)
+        {
+            keys.push_str(c.unlock);
+        }
+    }
+    keys
 }
 
 pub static LEVELS: &[Level] = &[

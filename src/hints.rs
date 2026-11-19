@@ -37,6 +37,10 @@ const MOTIONS: &[(&str, &str, char)] = &[
     ("%", "to the matching bracket", '%'),
     ("/text", "up to a search match", '/'),
     ("n", "up to the next match", 'n'),
+    ("H L", "to the top / bottom line of the screen", 'H'),
+    ("{n}|", "to column n", '|'),
+    ("_", "this line, and count-1 more", '_'),
+    (") (", "to the next / previous sentence", ')'),
 ];
 
 /// Text objects, after `i` (inside) or `a` (around, with the delimiters).
@@ -124,6 +128,12 @@ pub fn hint(pending: &str, visual: bool, allowed: &str, objects: bool) -> Option
                 ("gu gU g~", "lower / upper / toggle case (then a motion)", 'U'),
                 ("gn", "select the next match (cgn changes it)", 'n'),
                 ("g&", "repeat the last :s on every line", '&'),
+                ("g_", "to the line's last non-blank", '_'),
+                ("g* g#", "search the word, inside longer words too", '*'),
+                ("gJ", "join lines without a space", 'J'),
+                ("gi", "insert where you last stopped", 'i'),
+                ("gv", "select the last selection again", 'v'),
+                ("gp gP", "put, and land after it", 'p'),
             ]
             .into_iter()
             .filter(|(k, _, need)| *k == "gg" || learned(*need) || allowed.contains(':') && *k == "g&")

@@ -2424,13 +2424,22 @@ fn lesson_checklist(ui: Ui, title: &'static str) -> impl IntoElement {
         .child(text("USE ON THIS ISLE").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mr(px(4.0)))
         .child(dynamic(move || {
             ui.tick.get();
-            let left = session_value(|s| s.lesson_left()).unwrap_or_default();
-            Some(view().flex_row().flex_wrap().gap_2().children(lessons::requirements(title).iter().map(move |(label, _)| {
-                let done = !left.contains(label);
-                text(format!("{} {label}", if done { "✓" } else { "○" }))
+            let status = session_value(|s| lessons::status(title, &s.used)).unwrap_or_default();
+            Some(view().flex_row().flex_wrap().gap_2().children(status.into_iter().map(move |(label, optional, done)| {
+                let mark = match (done, optional) {
+                    (true, _) => "✓",
+                    (false, false) => "○",
+                    (false, true) => "◇",
+                };
+                let shown = if optional { format!("{mark} {label} (optional)") } else { format!("{mark} {label}") };
+                text(shown)
                     .font_family(MONO)
                     .text_size(px(12.5))
-                    .text_color(if done { hex(PRESENT) } else { hexa(0xece6ff, 0.6) })
+                    .text_color(match (done, optional) {
+                        (true, _) => hex(PRESENT),
+                        (false, false) => hexa(0xece6ff, 0.6),
+                        (false, true) => hexa(0xece6ff, 0.35),
+                    })
             })))
         }))
         .into_element()
@@ -2597,6 +2606,35 @@ fn spoiler(solution: String) -> impl IntoElement {
         }))
 }
 
+/// The commands a chapter's boss leaves behind: like the chapter's own,
+/// and usable from the next isle on.
+fn toolkit_box(chapter: &str) -> Option<View> {
+    let kit = story::chapter(chapter)?.toolkit;
+    if kit.is_empty() {
+        return None;
+    }
+    Some(
+        view()
+            .w_full()
+            .gap_1()
+            .p(px(10.0))
+            .rounded(px(10.0))
+            .bg(hexa(PRESENT, 0.08))
+            .border_1()
+            .border_color(hexa(PRESENT, 0.35))
+            .child(text("NEW IN YOUR TOOLKIT").text_size(px(11.0)).letter_spacing(px(1.4)).font_weight(FontWeight::BOLD).text_color(hex(PRESENT)))
+            .child(text("Cousins of what this chapter taught. They work from the next isle on.").text_size(px(12.0)).text_color(hexa(0xece6ff, 0.6)))
+            .children(kit.iter().map(|(keys, what)| {
+                view()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(text(*keys).font_family(MONO).font_weight(FontWeight::BOLD).text_size(px(13.0)).text_color(hex(0xffd76b)).min_w(px(120.0)))
+                    .child(text(*what).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.8)).flex_1())
+            })),
+    )
+}
+
 fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
     let scale = motion.card.interpolate(&[0.0, 1.0], &[0.85, 1.0]);
     dynamic(move || {
@@ -2637,12 +2675,14 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                         .bind_scale(&scale)
                         .bind_opacity(&motion.card)
                         .w(px(460.0))
-                        .p(px(24.0))
-                        .gap_3()
+                        .max_h(px((ui.stage.get().1 - 24.0).max(260.0)))
                         .rounded(px(18.0))
                         .bg(hexa(0x171032, 0.96))
                         .border_1()
                         .border_color(hexa(0xfff3b0, 0.35))
+                        .child(scroll().child(view()
+                        .p(px(24.0))
+                        .gap_3()
                         .items_center()
                         .child(
                             text(if failed { "✗".to_string() } else { format!("{}{}", "★".repeat(stars as usize), "☆".repeat(3 - stars as usize)) })
@@ -2654,6 +2694,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                             let name = story::chapter(level.chapter).map_or("", |c| c.boss);
                             text(format!("⚔ {name} is defeated!")).text_size(px(14.0)).font_weight(FontWeight::BOLD).text_color(hex(0xff9a6b))
                         }))
+                        .child((boss && !failed).then(|| toolkit_box(level.chapter)).flatten())
                         .child(
                             text(format!(
                                 "⏱ {}{}",
@@ -2780,7 +2821,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .child(text(if failed { "skip it" } else { "retry" }).text_color(hexa(0xffffff, 0.65)).mr(px(10.0)))
                                 .child(chip("q", 0xfff3b0))
                                 .child(text("map").text_color(hexa(0xffffff, 0.65))),
-                        ),
+                        ))),
                 ),
         )
     })
