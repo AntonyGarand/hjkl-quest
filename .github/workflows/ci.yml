@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: GTK 4 (the Linux backend's build dependency)
-        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev clang
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev clang llvm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --lib
@@ -28,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: GTK 4 (nsh builds a native helper of the crate on the host)
-        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev clang
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev clang llvm
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -83,7 +83,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: GTK 4
         if: matrix.target == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev clang
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev clang llvm
       - name: Install nsh (macOS, Linux)
         if: matrix.target != 'windows'
         run: |
