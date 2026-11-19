@@ -66,6 +66,15 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
             .child(heading("SEE IT WORK"))
             .child(view().flex_row().flex_wrap().gap_3().children(cards))
             .child(text(goal).text_size(px(13.0)).line_height(px(18.0)).text_color(hex(GEM)).mt(px(4.0)))
+            .child(
+                text(format!(
+                    "To clear it, use: {}. Reaching the goal without them doesn't count.",
+                    lessons::requirements(level.title).iter().map(|(l, _)| *l).collect::<Vec<_>>().join(" · ")
+                ))
+                .text_size(px(13.0))
+                .line_height(px(18.0))
+                .text_color(hex(0xffd76b)),
+            )
             .child(footer);
         Some(
             view()

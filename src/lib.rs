@@ -11,6 +11,7 @@ pub mod diff;
 pub mod examples;
 mod intro;
 pub mod game;
+pub mod lessons;
 pub mod levels;
 pub mod vim;
 
@@ -365,7 +366,10 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             Screen::Play(session) => {
                 if session.complete {
                     let index = session.index;
+                    // A missed lesson: Enter tries the isle again.
+                    let failed = !session.missed.is_empty();
                     let next = match key {
+                        Key::Enter if failed => Some(index),
                         Key::Enter | Key::Char('n') => Some((index + 1).min(LEVELS.len() - 1)),
                         Key::Char('r') => Some(index),
                         Key::Char('q') | Key::Esc => None,
@@ -407,6 +411,7 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                             other => state.toast = format!("E492: Not an editor command: {other}"),
                         }
                     }
+                    Event::Complete if !session.cleared() => {}
                     Event::Complete => {
                         let i = session.index;
                         let n = session.keys.len();
@@ -461,6 +466,11 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                 [Keyframe::new(0.0), Keyframe::new(-6.0), Keyframe::new(6.0), Keyframe::new(-3.0), Keyframe::new(0.0)],
                 KeyframeTiming::new(260.0),
             );
+        }
+        Event::Complete if session_value(|s| !s.cleared()).unwrap_or(false) => {
+            audio::play(Sfx::Locked, 0.5);
+            motion.card.set(0.0);
+            motion.card.spring(1.0, Spring { stiffness: 170.0, damping: 14.0, ..Spring::default() });
         }
         Event::Complete => {
             audio::play(Sfx::Gem, 0.4);
@@ -1917,7 +1927,7 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                     .child(text("GOAL").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(3.0)))
                     .child(view().flex_1().child(goal_view(ui, 12.0)))
             });
-            view().gap_2().child(chips).child(goal)
+            view().gap_2().child(chips).child(lesson_checklist(ui, index)).child(goal)
         })
     });
     view()
@@ -2039,6 +2049,28 @@ fn with_state_toast() -> String {
 /// Goal characters already in the buffer.
 const PRESENT: u32 = 0x8fe3a0;
 
+/// The commands the isle must see used, ticked off as they are.
+fn lesson_checklist(ui: Ui, index: usize) -> impl IntoElement {
+    let title = LEVELS[index].title;
+    view()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .child(text("USE ON THIS ISLE").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mr(px(4.0)))
+        .child(dynamic(move || {
+            ui.tick.get();
+            let left = session_value(|s| s.lesson_left()).unwrap_or_default();
+            Some(view().flex_row().flex_wrap().gap_2().children(lessons::requirements(title).iter().map(move |(label, _)| {
+                let done = !left.contains(label);
+                text(format!("{} {label}", if done { "✓" } else { "○" }))
+                    .font_family(MONO)
+                    .text_size(px(12.5))
+                    .text_color(if done { hex(PRESENT) } else { hexa(0xece6ff, 0.6) })
+            })))
+        }))
+}
+
 /// The goal text, each character green when the buffer already has it and
 /// amber while it's missing, and a count of what's left to do.
 fn goal_view(ui: Ui, size: f32) -> impl IntoElement {
@@ -2108,6 +2140,7 @@ fn side_panel(index: usize, ui: Ui) -> impl IntoElement {
         .child(text(level.story).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.8)).italic())
         .child(text("NEW COMMANDS").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(4.0)))
         .child(view().gap_2().children(teaches))
+        .child(lesson_checklist(ui, index))
         .child(level.goal_text().map(|_| {
             view()
                 .gap_2()
@@ -2206,7 +2239,11 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         let count = session_value(|s| s.keys.len()).unwrap();
         let (habits, trapped) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.trapped)).unwrap();
         let last = index + 1 == LEVELS.len();
-        let verdict = if count < par {
+        let missed = session_value(|s| s.missed.clone()).unwrap_or_default();
+        let failed = !missed.is_empty();
+        let verdict = if failed {
+            "Lesson missed: the isle isn't cleared."
+        } else if count < par {
             "Under par! You beat the golf solution."
         } else if count == par {
             "Exactly par. A true vim golfer."
@@ -2236,11 +2273,28 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                         .border_color(hexa(0xfff3b0, 0.35))
                         .items_center()
                         .child(
-                            text(format!("{}{}", "★".repeat(stars as usize), "☆".repeat(3 - stars as usize)))
+                            text(if failed { "✗".to_string() } else { format!("{}{}", "★".repeat(stars as usize), "☆".repeat(3 - stars as usize)) })
                                 .text_size(px(40.0))
-                                .text_color(hex(0xffd76b)),
+                                .text_color(hex(if failed { 0xff8a70 } else { 0xffd76b })),
                         )
                         .child(text(verdict).text_size(px(18.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0)))
+                        .child(failed.then(|| {
+                            view()
+                                .w_full()
+                                .gap_2()
+                                .p(px(10.0))
+                                .rounded(px(10.0))
+                                .bg(hexa(0xff8a70, 0.12))
+                                .border_1()
+                                .border_color(hexa(0xff8a70, 0.4))
+                                .child(
+                                    text("You reached the goal without using what this isle teaches. Use these, then it counts:")
+                                        .text_size(px(13.5))
+                                        .line_height(px(19.0))
+                                        .text_color(hexa(0xece6ff, 0.85)),
+                                )
+                                .child(view().flex_row().flex_wrap().gap_2().children(missed.iter().map(|m| chip(*m, 0xff8a70))))
+                        }))
                         .child(
                             view()
                                 .w_full()
@@ -2271,9 +2325,19 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .mt(px(10.0))
                                 .items_center()
                                 .child(chip("Enter", 0xfff3b0))
-                                .child(text(if last { "back to the map" } else { "next isle" }).text_color(hexa(0xffffff, 0.65)).mr(px(10.0)))
-                                .child(chip("r", 0xfff3b0))
-                                .child(text("retry").text_color(hexa(0xffffff, 0.65)).mr(px(10.0)))
+                                .child(
+                                    text(if failed {
+                                        "try again"
+                                    } else if last {
+                                        "back to the map"
+                                    } else {
+                                        "next isle"
+                                    })
+                                    .text_color(hexa(0xffffff, 0.65))
+                                    .mr(px(10.0)),
+                                )
+                                .child(chip(if failed { "n" } else { "r" }, 0xfff3b0))
+                                .child(text(if failed { "skip it" } else { "retry" }).text_color(hexa(0xffffff, 0.65)).mr(px(10.0)))
                                 .child(chip("q", 0xfff3b0))
                                 .child(text("map").text_color(hexa(0xffffff, 0.65))),
                         ),

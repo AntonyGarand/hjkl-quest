@@ -38,6 +38,12 @@ pub struct Session {
     pub coach: Coach,
     /// The last tip from the coach, until the next key.
     pub tip: String,
+    /// Every command completed, as typed (`3e`, `"add`, `:%s/a/b/g`), to
+    /// check the isle's lesson was used.
+    pub used: Vec<String>,
+    /// Set when the goal was reached without the lesson's commands: what
+    /// was missing. The isle is over, but not cleared.
+    pub missed: Vec<&'static str>,
 }
 
 /// The game's own `:` commands: always available, and free.
@@ -91,6 +97,8 @@ impl Session {
             trapped: 0,
             coach: Coach::default(),
             tip: String::new(),
+            used: Vec::new(),
+            missed: Vec::new(),
         };
         session.collect();
         session
@@ -190,7 +198,20 @@ impl Session {
         let revision = self.editor.revision;
         let cursor = self.editor.cursor;
         let (before_mode, before_pending) = (self.editor.mode, self.editor.pending());
+        // A command line ends with Enter: remember it whole.
+        let line = (matches!(before_mode, Mode::Command { .. }) && key == Key::Enter)
+            .then(|| format!("{}{}", self.editor.cmd_prefix(), self.editor.cmdline));
         let outcome = self.editor.feed(key);
+        match line {
+            Some(line) => self.used.push(line),
+            None if matches!(before_mode, Mode::Normal | Mode::Visual { .. } | Mode::Block)
+                && self.editor.pending().is_empty()
+                && !matches!(outcome, Outcome::Bell(_)) =>
+            {
+                self.used.push(format!("{before_pending}{key}"));
+            }
+            None => {}
+        }
         self.message.clear();
         self.tip.clear();
         // Landing on a trap throws the wisp back where it came from; the
@@ -273,6 +294,16 @@ impl Session {
         Some(at)
     }
 
+    /// The isle's required commands not used yet.
+    pub fn lesson_left(&self) -> Vec<&'static str> {
+        crate::lessons::missing(self.level().title, &self.used)
+    }
+
+    /// Whether the isle was cleared: the goal reached, with its lesson.
+    pub fn cleared(&self) -> bool {
+        self.complete && self.missed.is_empty()
+    }
+
     fn check_complete(&mut self) -> bool {
         if self.gems_left() == 0
             && self.goal_met()
@@ -280,6 +311,7 @@ impl Session {
             && self.editor.pending().is_empty()
         {
             self.complete = true;
+            self.missed = self.lesson_left();
         }
         self.complete
     }
@@ -317,6 +349,7 @@ mod tests {
                 s.editor.cursor,
                 s.editor.text()
             );
+            assert!(s.missed.is_empty(), "level {i} {}: the golf line skips the lesson: {:?} (used {:?})", level.title, s.missed, s.used);
             assert_eq!(s.keys.len(), level.par());
             assert_eq!(s.stars(), 3);
         }
@@ -419,6 +452,27 @@ mod tests {
         }
         assert!(s.tip.contains("4h"), "{}", s.tip);
         assert_eq!(s.coach.spotted.len(), 1);
+    }
+
+    #[test]
+    fn reaching_the_goal_without_the_lesson_fails_the_isle() {
+        // Search Party: three searches instead of / then n.
+        let i = LEVELS.iter().position(|l| l.title == "Search Party").unwrap();
+        let mut s = Session::new(i);
+        assert_eq!(s.lesson_left(), vec!["/text", "n or N"]);
+        let mut last = Event::None;
+        for k in parse_keys("/g<CR>/g<CR>/g<CR>") {
+            last = s.press(k);
+        }
+        assert_eq!(last, Event::Complete);
+        assert!(s.complete && !s.cleared());
+        assert_eq!(s.missed, vec!["n or N"]);
+        // The golf line clears it.
+        let mut s = Session::new(i);
+        for k in parse_keys(LEVELS[i].solution) {
+            s.press(k);
+        }
+        assert!(s.cleared());
     }
 
     #[test]

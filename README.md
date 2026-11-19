@@ -28,6 +28,9 @@ native desktop app on Windows, macOS and Linux.
   habits to break.
 - **The address follows you.** On the web the current isle is in the URL (`…/hjkl-quest/#looking-back`, `#map`
   on the map), so reloading restarts the isle, links open an isle directly, and back/forward move between them.
+- **Use the lesson.** Each isle names the commands it's about (Word Hopping: `w e b`; Search Party: `/` and `n`;
+  Tag, You're It: `it`/`at` and `ip`/`ap`…), ticked off as you use them. Reaching the goal any other way fails
+  the isle: no stars, and the card says what was missing. Every golf solution is checked to use them.
 - **Vim golf.** Every isle has a *par*: the keystrokes of a short known solution. Finish at par or under for
   three stars, and compare your keys with the golf line afterwards (hidden until you hover it, so it never
   spoils a retry).
@@ -83,6 +86,7 @@ For development, `HJKL_LEVEL=12 cargo run` opens an isle directly.
 | File | What it holds |
 |---|---|
 | `src/vim.rs` | A self-contained vim emulator: motions, operators, text objects, insert/replace/visual/block modes, search, registers, marks, macros, ex ranges with `:s :g :norm :m :t :sort`, undo/redo, `.` |
+| `src/lessons.rs` | The commands each isle requires, and how a typed command is matched against them |
 | `src/coach.rs` | The habit coach: slow command patterns and the faster command for each |
 | `src/examples.rs` | The worked examples of each isle's intro, played through the engine |
 | `src/intro.rs` | The intro card shown before an isle |
