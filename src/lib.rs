@@ -1479,6 +1479,7 @@ pub fn App() -> impl IntoElement {
     audio::load_all();
     audio::start_ambience();
     bind_keys(ui, motion.clone());
+    follow_url(ui);
 
     let sky_motion = motion.clone();
     let screen_motion = motion.clone();
@@ -1506,6 +1507,75 @@ pub fn App() -> impl IntoElement {
                 }
             })),
         )
+}
+
+// --------------------------------------------------------------------- url
+
+/// An isle's name in the address: its title in lower case, words joined by
+/// dashes ("Tag, You're It" is `tag-youre-it`), so links survive new isles.
+fn slug(title: &str) -> String {
+    let mut out = String::new();
+    for c in title.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+        } else if c == ' ' && !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out
+}
+
+/// The isle an address names (`…#looking-back`), if any.
+fn isle_in(url: &str) -> Option<usize> {
+    let (_, fragment) = url.split_once('#')?;
+    LEVELS.iter().position(|l| slug(l.title) == fragment)
+}
+
+thread_local! {
+    /// Set once the address the app opened with has been read: before
+    /// that, the screen must not overwrite it.
+    static URL_READ: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Keeps the current isle in the address (`#slug`, `#map` on the map), so
+/// reloading the page restarts the isle; opens the isle an address names,
+/// at start and when the browser's back or forward changes it.
+fn follow_url(ui: Ui) {
+    effect(move || {
+        ui.scene.get();
+        if !URL_READ.with(|r| r.get()) {
+            return;
+        }
+        let here = with_state(|s| match &s.screen {
+            Screen::Play(p) => slug(LEVELS[p.index].title),
+            Screen::Menu { .. } => "map".to_string(),
+        });
+        let _ = set_app_url(format!("#{here}"));
+    });
+    spawn(async move {
+        if let Some(i) = app_url().await.as_deref().and_then(isle_in) {
+            with_state(|s| s.open(i));
+        }
+        URL_READ.with(|r| r.set(true));
+        ui.scene.update(|s| *s += 1);
+        loop {
+            let change = next_app_url_change().await;
+            let target = isle_in(&change.url);
+            with_state(|s| match target {
+                Some(i) => s.open(i),
+                None => {
+                    let selected = match &s.screen {
+                        Screen::Play(p) => p.index,
+                        Screen::Menu { selected } => *selected,
+                    };
+                    s.screen = Screen::Menu { selected };
+                    s.intro = false;
+                }
+            });
+            ui.scene.update(|s| *s += 1);
+            ui.tick.update(|t| *t += 1);
+        }
+    });
 }
 
 fn menu_screen(ui: Ui) -> impl IntoElement {
@@ -2210,4 +2280,25 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                 ),
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_isle_has_its_own_address() {
+        assert_eq!(slug("Tag, You're It"), "tag-youre-it");
+        assert_eq!(slug("Wind-up Golem"), "windup-golem");
+        let mut slugs: Vec<String> = LEVELS.iter().map(|l| slug(l.title)).collect();
+        slugs.sort();
+        slugs.dedup();
+        assert_eq!(slugs.len(), LEVELS.len());
+        for (i, level) in LEVELS.iter().enumerate() {
+            let url = format!("https://antonygarand.github.io/hjkl-quest/#{}", slug(level.title));
+            assert_eq!(isle_in(&url), Some(i));
+        }
+        assert_eq!(isle_in("https://x/hjkl-quest/#map"), None);
+        assert_eq!(isle_in("https://x/hjkl-quest/"), None);
+    }
 }

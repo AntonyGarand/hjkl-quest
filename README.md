@@ -26,6 +26,8 @@ native desktop app on Windows, macOS and Linux.
 - **A habit coach** watches your commands and names the faster one you've already learned: `llll` → `4l` / `e`,
   `0i` → `I`, `$a` → `A`, `dwi` → `cw`, `d$` → `D`, `lh` (moves that cancel out)… The completion card lists the
   habits to break.
+- **The address follows you.** On the web the current isle is in the URL (`…/hjkl-quest/#looking-back`, `#map`
+  on the map), so reloading restarts the isle, links open an isle directly, and back/forward move between them.
 - **Vim golf.** Every isle has a *par*: the keystrokes of a short known solution. Finish at par or under for
   three stars, and compare your keys with the golf line afterwards (hidden until you hover it, so it never
   spoils a retry).
