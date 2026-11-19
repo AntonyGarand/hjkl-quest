@@ -30,6 +30,10 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
         } else {
             "Goal: collect every crystal ◆."
         };
+        let goal = match level.budget() {
+            Some(b) => format!("{goal} Only {b} keystrokes allowed: run out and the isle crumbles."),
+            None => goal.to_string(),
+        };
         let cards = examples::examples(level.title).iter().map(move |&(text, keys)| example_card(ui, text, keys));
         let heading = |label: &'static str| text(label).text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(6.0));
         let start = view()

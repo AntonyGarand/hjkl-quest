@@ -1867,7 +1867,11 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         )
         .child(stat("KEYS", move || {
             ui.tick.get();
-            session_value(|s| s.keys.len().to_string()).unwrap_or_default()
+            session_value(|s| match s.level().budget() {
+                Some(b) => format!("{}/{b}", s.keys.len()),
+                None => s.keys.len().to_string(),
+            })
+            .unwrap_or_default()
         }))
         .child(stat("PAR", move || level.par().to_string()))
         .child(stat("CRYSTALS", move || {
@@ -2278,6 +2282,46 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .text_color(hex(if failed { 0xff8a70 } else { 0xffd76b })),
                         )
                         .child(text(verdict).text_size(px(18.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0)))
+                        .child((last && !failed).then(|| {
+                            // The ending: the archipelago restored, and the stars of the whole journey.
+                            let (stars, cleared) = with_state(|s| {
+                                let stars: usize = s.best.iter().enumerate().filter_map(|(i, b)| b.map(|n| game::stars(n, LEVELS[i].par()) as usize)).sum();
+                                (stars, s.best.iter().filter(|b| b.is_some()).count())
+                            });
+                            view()
+                                .w_full()
+                                .gap_2()
+                                .p(px(12.0))
+                                .rounded(px(10.0))
+                                .bg(hexa(0xfff3b0, 0.08))
+                                .border_1()
+                                .border_color(hexa(0xfff3b0, 0.35))
+                                .items_center()
+                                .child(text("THE END").text_size(px(13.0)).letter_spacing(px(3.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0)))
+                                .child(
+                                    text(
+                                        "The last door of the Archive swings open. Every isle of the Buffer Archipelago answers to \
+                                         your keys now: no arrows, no mouse, just the home row. The wisp settles on the summit \
+                                         and looks out over the clouds, already counting keystrokes it could have saved.",
+                                    )
+                                    .text_size(px(13.5))
+                                    .line_height(px(19.0))
+                                    .italic()
+                                    .text_center()
+                                    .text_color(hexa(0xece6ff, 0.85)),
+                                )
+                                .child(
+                                    text(format!("{cleared} of {} isles cleared · ★ {stars} of {}", LEVELS.len(), LEVELS.len() * 3))
+                                        .font_family(MONO)
+                                        .text_size(px(13.0))
+                                        .text_color(hex(0xffd76b)),
+                                )
+                                .child(
+                                    text("Now open a real file in vim. Every command here works there too.")
+                                        .text_size(px(12.5))
+                                        .text_color(hexa(0xece6ff, 0.6)),
+                                )
+                        }))
                         .child(failed.then(|| {
                             view()
                                 .w_full()
@@ -2293,7 +2337,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                         .line_height(px(19.0))
                                         .text_color(hexa(0xece6ff, 0.85)),
                                 )
-                                .child(view().flex_row().flex_wrap().gap_2().children(missed.iter().map(|m| chip(*m, 0xff8a70))))
+                                .child(view().flex_row().flex_wrap().gap_2().children(missed.iter().map(|m| chip(m.clone(), 0xff8a70))))
                         }))
                         .child(
                             view()

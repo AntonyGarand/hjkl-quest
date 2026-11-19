@@ -52,12 +52,12 @@ test("the goal panel counts what is missing", async () => {
 
 test("control keys reach the editor", async () => {
   const app = await open(".", { platform: "web", width: 1280, height: 800 });
-  // Isle 28, Tally Marks: Ctrl-a winds a number up.
-  for (let i = 0; i < 27; i++) await app.keyboard.press("j");
+  // Isle 29, Tally Marks: Ctrl-a winds a number up.
+  for (let i = 0; i < 28; i++) await app.keyboard.press("j");
   await app.keyboard.press("enter");
   await app.waitFor("YOU WILL LEARN");
   await app.keyboard.press("escape");
-  await app.waitFor("28. Tally Marks");
+  await app.waitFor("29. Tally Marks");
   await app.keyboard.press("2");
   await app.keyboard.press("ctrl+a");
   await app.waitFor("2<C-a>");
@@ -84,7 +84,7 @@ async function openIsle(app, index: number) {
 
 async function type(app, keys: string) {
   for (const k of keys) {
-    const shifted: Record<string, string> = { ":": "shift+;", "%": "shift+5", "?": "shift+/" };
+    const shifted: Record<string, string> = { ":": "shift+;", "%": "shift+5", "?": "shift+/", "#": "shift+3" };
     await app.keyboard.press(shifted[k] ?? (k === " " ? "space" : k));
   }
 }
@@ -118,5 +118,21 @@ test("Tab completes a file name on the command line", async () => {
   await app.keyboard.press("tab");
   await app.waitFor(":r ingredients.txt▏");
   await app.keyboard.press("enter");
+  await app.waitFor("Exactly par. A true vim golfer.");
+});
+
+test("switching files with :e and :e #", async () => {
+  const app = await open(".", { platform: "web", width: 1280, height: 800 });
+  await openIsle(app, 25); // Two Scrolls
+  await type(app, "jyy:e r");
+  await app.keyboard.press("tab");
+  await app.keyboard.press("enter");
+  await app.waitFor('"recipe.txt" 2L');
+  await type(app, "jpkyy:w");
+  await app.keyboard.press("enter");
+  await app.waitFor('"recipe.txt" 3L written');
+  await type(app, ":e #");
+  await app.keyboard.press("enter");
+  await type(app, "p");
   await app.waitFor("Exactly par. A true vim golfer.");
 });

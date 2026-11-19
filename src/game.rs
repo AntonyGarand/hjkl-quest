@@ -43,7 +43,7 @@ pub struct Session {
     pub used: Vec<String>,
     /// Set when the goal was reached without the lesson's commands: what
     /// was missing. The isle is over, but not cleared.
-    pub missed: Vec<&'static str>,
+    pub missed: Vec<String>,
 }
 
 /// The game's own `:` commands: always available, and free.
@@ -122,7 +122,8 @@ impl Session {
 
     /// Whether the buffer still differs from the goal.
     pub fn goal_met(&self) -> bool {
-        self.level().goal_text().is_none_or(|g| self.editor.text() == g)
+        self.editor.buffer_name == crate::vim::ISLE
+            && self.level().goal_text().is_none_or(|g| self.editor.text() == g)
             && self.level().want_files().iter().all(|(n, t)| self.editor.files.get(*n).is_some_and(|f| f == t))
     }
 
@@ -274,6 +275,13 @@ impl Session {
         }
         if self.check_complete() {
             event = Event::Complete;
+        } else if let Some(budget) = self.level().budget()
+            && self.keys.len() >= budget
+        {
+            // Out of keystrokes: the isle ends, not cleared.
+            self.complete = true;
+            self.missed = vec![format!("finish within {budget} keys")];
+            event = Event::Complete;
         }
         event
     }
@@ -311,7 +319,7 @@ impl Session {
             && self.editor.pending().is_empty()
         {
             self.complete = true;
-            self.missed = self.lesson_left();
+            self.missed = self.lesson_left().into_iter().map(String::from).collect();
         }
         self.complete
     }
@@ -466,13 +474,26 @@ mod tests {
         }
         assert_eq!(last, Event::Complete);
         assert!(s.complete && !s.cleared());
-        assert_eq!(s.missed, vec!["n or N"]);
+        assert_eq!(s.missed, vec!["n or N".to_string()]);
         // The golf line clears it.
         let mut s = Session::new(i);
         for k in parse_keys(LEVELS[i].solution) {
             s.press(k);
         }
         assert!(s.cleared());
+    }
+
+    #[test]
+    fn a_keystroke_budget_ends_the_isle() {
+        let i = LEVELS.iter().position(|l| l.title == "Edge of the World").unwrap();
+        let mut s = Session::new(i);
+        let mut last = Event::None;
+        for k in 0..10 {
+            last = s.press(Key::Char(if k % 2 == 0 { 'l' } else { 'h' }));
+        }
+        assert_eq!(last, Event::Complete);
+        assert!(s.complete && !s.cleared());
+        assert_eq!(s.missed, vec!["finish within 10 keys".to_string()]);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! The campaign: forty isles of the Buffer Archipelago, each teaching a few
+//! The campaign: forty-one isles of the Buffer Archipelago, each teaching a few
 //! commands. Every level's `solution` is a vim-golf line: the tests replay it
 //! and check that it solves the level in exactly `par` keystrokes.
 
@@ -42,7 +42,16 @@ impl Level {
         match self.title {
             "Scrolls" => &[("ingredients.txt", "flour\neggs\nmilk"), ("notes.txt", "Pancakes: mix, rest, fry."), ("weather.txt", "sunny")],
             "Copy Desk" => &[("old.txt", "nothing new")],
+            "Two Scrolls" => &[("recipe.txt", "flour\nsugar"), ("notes.txt", "bake at 180")],
             _ => &[],
+        }
+    }
+
+    /// The most keystrokes the isle allows, if it limits them.
+    pub fn budget(&self) -> Option<usize> {
+        match self.title {
+            "Edge of the World" => Some(10),
+            _ => None,
         }
     }
 
@@ -50,6 +59,7 @@ impl Level {
     pub fn want_files(&self) -> &'static [(&'static str, &'static str)] {
         match self.title {
             "Copy Desk" => &[("keep.txt", "buy milk\ncall mom")],
+            "Two Scrolls" => &[("recipe.txt", "flour\nsugar\neggs")],
             _ => &[],
         }
     }
@@ -101,6 +111,7 @@ pub static LEVELS: &[Level] = &[
             ("k", "step up"),
             ("l", "step right"),
             (":q!  :wq", "in vim, quit without saving, or save and quit; here both go back to the map"),
+            (":h  :help", "vim's manual; here, this isle's lessons again"),
         ],
         unlock: "hjkl",
         map: "
@@ -188,7 +199,8 @@ a.b.c d.e.f g.h.i j.k.l",
     Level {
         chapter: "II · The Word Bridges",
         title: "Edge of the World",
-        story: "The cliffs are ragged and indented. Jump straight to the edges of a line.",
+        story: "The cliffs are ragged and indented, and crumbling: this isle allows only \
+                10 keystrokes. Jump straight to the edges of a line.",
         teaches: &[
             ("0", "to the very first column"),
             ("^", "to the first non-blank character"),
@@ -393,14 +405,15 @@ sand",
             ("r{c}", "replace the character under the cursor with c"),
             ("u  Ctrl-r", "undo a mistake, redo it (always available from here on)"),
             ("U", "undo every change on the last changed line at once"),
+            ("~", "toggle the case of the character, and step right"),
         ],
-        unlock: "xXrU",
+        unlock: "xXrU~",
         map: "
-Thee cat zat onn thee mat",
+thee cat zat onn thee mat",
         marks: "@",
         goal: Some("
 The cat sat on the mat"),
-        solution: "3lxfzrsfnxfex",
+        solution: "~lxfzrsfnxfex",
         tip: "Glowing tiles don't match the goal yet. Fix them all to finish.",
     },
     Level {
@@ -412,6 +425,7 @@ The cat sat on the mat"),
             ("d{motion}", "delete over a motion: dw, de, d$, dj, dt,"),
             ("dd", "delete the whole line"),
             ("D", "delete to the end of the line (d$)"),
+            ("2dd  d3w", "counts work with operators too"),
         ],
         unlock: "dD",
         map: "
@@ -706,6 +720,28 @@ spam spam"),
         tip: "The goal also wants keep.txt to hold the two errands. :!cat keep.txt shows what's in it.",
     },
     Level {
+        chapter: "IX · The Scriptorium",
+        title: "Two Scrolls",
+        story: "Each list needs a line from the other. Open the recipe, trade lines, write it, \
+                and come back: :e opens another file, and :e # returns to the one before.",
+        teaches: &[
+            (":e FILE", "edit another file (your text stays open, as with 'hidden')"),
+            (":e #", "back to the file you were in before"),
+            (":w", "write the file you're editing"),
+        ],
+        unlock: "",
+        map: "
+# shopping
+eggs",
+        marks: "@",
+        goal: Some("
+# shopping
+eggs
+sugar"),
+        solution: "jyy:e r<Tab><CR>jpkyy:w<CR>:e #<CR>p",
+        tip: "The isle's own text is isle.txt: end there, with recipe.txt written.",
+    },
+    Level {
         chapter: "X · The Vaults",
         title: "Named Vaults",
         story: "Below the summit lie the vaults: twenty-six named registers, a hand for \
@@ -715,6 +751,7 @@ spam spam"),
             ("\"0", "the last yank, untouched by later deletes"),
             ("\"_", "the black hole: delete without losing what you yanked"),
             ("\"A", "an upper-case name appends to the register"),
+            (":reg", "show what every register holds"),
         ],
         unlock: "\"",
         map: "

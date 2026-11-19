@@ -211,6 +211,9 @@ struct BlockInsert {
     pad: bool,
 }
 
+/// The name of the isle's own text, as `:e` and `:ls` see it.
+pub const ISLE: &str = "isle.txt";
+
 /// shiftwidth, for `>` and `<`.
 pub const SHIFT: usize = 4;
 
@@ -263,6 +266,11 @@ pub struct Editor {
     line_undo: Option<(usize, Vec<char>)>,
     /// A small file system for `:w`, `:r` and the shell.
     pub files: std::collections::BTreeMap<String, String>,
+    /// The file being edited (`:e`): the isle itself, or one of `files`.
+    pub buffer_name: String,
+    /// The file `:e #` goes back to, and where the cursor was in each.
+    alternate: Option<String>,
+    cursors: HashMap<String, Pos>,
     pub ignorecase: bool,
     pub smartcase: bool,
     pub hlsearch: bool,
@@ -335,6 +343,9 @@ impl Editor {
             jump_at: 0,
             line_undo: None,
             files: std::collections::BTreeMap::new(),
+            buffer_name: ISLE.to_string(),
+            alternate: None,
+            cursors: HashMap::new(),
             ignorecase: false,
             smartcase: false,
             hlsearch: false,
@@ -1053,6 +1064,64 @@ impl Editor {
                     self.changed();
                 }
                 Outcome::Ok
+            }
+            // `:w` alone writes the file being edited; on the isle itself
+            // it's the game's (progress saves by itself).
+            "w" | "write" if arg.trim().is_empty() && range.is_none() && self.buffer_name != ISLE => {
+                let name = self.buffer_name.clone();
+                self.files.insert(name.clone(), self.text());
+                Outcome::Info(format!("\"{name}\" {}L written", self.lines.len()))
+            }
+            // (`:e!` is the game's: start the isle again.)
+            "e" | "edit" if !arg.trim().is_empty() && !arg.starts_with('!') => {
+                let arg = arg.trim();
+                let target = if arg == "#" {
+                    match &self.alternate {
+                        Some(a) => a.clone(),
+                        None => return Outcome::Bell("E23: No alternate file".into()),
+                    }
+                } else {
+                    arg.to_string()
+                };
+                if target == self.buffer_name {
+                    return Outcome::Ok;
+                }
+                // The text being left stays open, as with 'hidden'.
+                let here = std::mem::replace(&mut self.buffer_name, target.clone());
+                self.files.insert(here.clone(), self.text());
+                self.cursors.insert(here.clone(), self.cursor);
+                self.alternate = Some(here);
+                let text = self.files.get(&target).cloned();
+                let new = text.is_none();
+                self.lines = text.unwrap_or_default().split('\n').map(|l| l.chars().collect()).collect();
+                self.mode = Mode::Normal;
+                self.cursor = self.cursors.get(&target).copied().unwrap_or_default();
+                self.clamp();
+                self.want = self.cursor.col;
+                self.undo.clear();
+                self.redo.clear();
+                self.line_undo = None;
+                self.changed();
+                Outcome::Info(if new { format!("\"{target}\" [New]") } else { format!("\"{target}\" {}L", self.lines.len()) })
+            }
+            "reg" | "registers" | "di" | "display" => {
+                let show = |t: &str| {
+                    let t: String = t.replace('\n', "^J").chars().map(|c| if c.is_control() { '^' } else { c }).collect();
+                    if t.chars().count() > 18 { format!("{}…", t.chars().take(18).collect::<String>()) } else { t }
+                };
+                let mut out = Vec::new();
+                if !self.register.text.is_empty() {
+                    out.push(format!("\"\" {}", show(&self.register.text)));
+                }
+                let mut names: Vec<&char> = self.registers.keys().collect();
+                names.sort();
+                for name in names {
+                    let text = &self.registers[name].text;
+                    if !text.is_empty() {
+                        out.push(format!("\"{name} {}", show(text)));
+                    }
+                }
+                if out.is_empty() { Outcome::Info("All registers are empty".into()) } else { Outcome::Info(out.join("   ")) }
             }
             "w" | "write" if !arg.trim().is_empty() => {
                 let name = arg.trim().to_string();
@@ -2845,7 +2914,7 @@ impl Editor {
 
 /// Ex commands Tab completes (vimtutor 7.3).
 const EX_NAMES: &[&str] = &[
-    "copy", "delete", "global", "help", "join", "move", "nohlsearch", "normal", "quit", "read", "set", "sort", "substitute",
+    "copy", "delete", "edit", "global", "help", "registers", "join", "move", "nohlsearch", "normal", "quit", "read", "set", "sort", "substitute",
     "vglobal", "write", "wq",
 ];
 
@@ -3648,6 +3717,25 @@ mod tests {
         let mut e5 = Editor::new("x");
         e5.feed_all(&parse_keys(":set hl<Tab>"));
         assert_eq!(e5.cmdline, "set hlsearch");
+    }
+
+    #[test]
+    fn switching_files_and_registers() {
+        let mut e = Editor::new("eggs");
+        e.files.insert("recipe.txt".into(), "flour\nsugar".into());
+        e.feed_all(&parse_keys("yy:e recipe.txt<CR>Gp"));
+        assert_eq!(e.buffer_name, "recipe.txt");
+        assert_eq!(e.text(), "flour\nsugar\neggs");
+        assert_eq!(e.feed_all_last(&parse_keys(":w<CR>")), Outcome::Info("\"recipe.txt\" 3L written".into()));
+        assert_eq!(e.files["recipe.txt"], "flour\nsugar\neggs");
+        e.feed_all(&parse_keys("kyy:e #<CR>p"));
+        assert_eq!(e.buffer_name, ISLE);
+        assert_eq!(e.text(), "eggs\nsugar");
+        // :w on the isle itself is the game's.
+        assert_eq!(e.feed_all_last(&parse_keys(":w<CR>")), Outcome::Command("w".into()));
+        let mut e = Editor::new("one two");
+        e.feed_all(&parse_keys("\"ayw"));
+        assert_eq!(e.feed_all_last(&parse_keys(":reg<CR>")), Outcome::Info("\"\" one    \"a one ".into()));
     }
 
     #[test]
