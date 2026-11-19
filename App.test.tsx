@@ -6,7 +6,12 @@ test("the map lists the isles and the first one opens", async () => {
   expect(app.texts()).toContain("HJKL QUEST");
   expect(app.texts()).toContain("First Steps");
   await app.keyboard.press("enter");
+  // The first time, the isle's lessons come first, with examples.
+  await app.waitFor("YOU WILL LEARN");
+  expect(app.texts()).toContain("SEE IT WORK");
+  await app.keyboard.press("enter");
   await app.waitFor("NORMAL");
+  expect(app.texts()).not.toContain("YOU WILL LEARN");
   expect(app.texts()).toContain("1. First Steps");
   // A command from a later isle is locked and costs no keystroke.
   await app.keyboard.press("w");
@@ -15,6 +20,8 @@ test("the map lists the isles and the first one opens", async () => {
 
 test("the golf solution stays hidden until hovered", async () => {
   const app = await open(".", { platform: "web", width: 1280, height: 800 });
+  await app.keyboard.press("enter");
+  await app.waitFor("YOU WILL LEARN");
   await app.keyboard.press("enter");
   await app.waitFor("NORMAL");
   // A route of par length that differs from the golf line.
@@ -31,6 +38,8 @@ test("the goal panel counts what is missing", async () => {
   // Isle 14, Insert Coin: words to add, nothing to remove.
   for (let i = 0; i < 13; i++) await app.keyboard.press("j");
   await app.keyboard.press("enter");
+  await app.waitFor("YOU WILL LEARN");
+  await app.keyboard.press("enter");
   await app.waitFor("14. Insert Coin");
   await app.waitFor("+ 16 to add");
   expect(app.texts()).toContain("✕ 0 to remove");
@@ -46,8 +55,21 @@ test("control keys reach the editor", async () => {
   // Isle 23, Tally Marks: Ctrl-a winds a number up.
   for (let i = 0; i < 22; i++) await app.keyboard.press("j");
   await app.keyboard.press("enter");
+  await app.waitFor("YOU WILL LEARN");
+  await app.keyboard.press("escape");
   await app.waitFor("23. Tally Marks");
   await app.keyboard.press("2");
   await app.keyboard.press("ctrl+a");
   await app.waitFor("2<C-a>");
+});
+
+test(":h brings the lessons back", async () => {
+  const app = await open(".", { platform: "web", width: 1280, height: 800 });
+  await app.keyboard.press("enter");
+  await app.waitFor("YOU WILL LEARN");
+  await app.keyboard.press("enter");
+  await app.keyboard.press("shift+;");
+  await app.keyboard.press("h");
+  await app.keyboard.press("enter");
+  await app.waitFor("YOU WILL LEARN");
 });

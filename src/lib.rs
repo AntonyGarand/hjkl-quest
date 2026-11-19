@@ -8,6 +8,8 @@
 pub mod audio;
 pub mod coach;
 pub mod diff;
+pub mod examples;
+mod intro;
 pub mod game;
 pub mod levels;
 pub mod vim;
@@ -126,6 +128,39 @@ struct State {
     /// The fewest keystrokes each level was solved in.
     best: Vec<Option<usize>>,
     toast: String,
+    /// The isle's intro is showing (its lessons, before playing).
+    intro: bool,
+    /// Isles whose intro has been seen.
+    seen: Vec<bool>,
+}
+
+impl State {
+    /// Opens isle `i`, with its intro the first time.
+    fn open(&mut self, i: usize) {
+        self.screen = Screen::Play(Box::new(Session::new(i)));
+        self.intro = !self.seen[i] && self.best[i].is_none();
+    }
+
+    fn close_intro(&mut self) {
+        self.intro = false;
+        if let Screen::Play(s) = &self.screen {
+            self.seen[s.index] = true;
+            let text = self.seen.iter().enumerate().filter(|(_, s)| **s).map(|(i, _)| i.to_string()).collect::<Vec<_>>().join(",");
+            let _ = Storage::set_item("hjkl-quest.seen", text);
+        }
+    }
+}
+
+fn load_seen() -> Vec<bool> {
+    let mut seen = vec![false; LEVELS.len()];
+    if let Some(saved) = Storage::get_item("hjkl-quest.seen") {
+        for i in saved.split(',').filter_map(|n| n.parse::<usize>().ok()) {
+            if i < seen.len() {
+                seen[i] = true;
+            }
+        }
+    }
+    seen
 }
 
 thread_local! {
@@ -133,6 +168,8 @@ thread_local! {
         screen: start_screen(),
         best: load_progress(),
         toast: String::new(),
+        intro: false,
+        seen: load_seen(),
     });
 }
 
@@ -202,6 +239,8 @@ struct Ui {
     stage: Signal<(f32, f32)>,
     window: Signal<(f32, f32)>,
     burst_at: Signal<(f32, f32)>,
+    /// Steps the intro's examples along.
+    beat: Signal<u64>,
 }
 
 // --------------------------------------------------------------------- keys
@@ -281,13 +320,23 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                     }
                     Key::Enter | Key::Char('l') | Key::Char(' ') => {
                         let index = *selected;
-                        state.screen = Screen::Play(Box::new(Session::new(index)));
+                        state.open(index);
                         scene_changed = true;
                         return Some(Event::Moved);
                     }
                     _ => return None,
                 }
                 Some(Event::Moved)
+            }
+            Screen::Play(_) if state.intro => {
+                // The intro takes the keyboard until it's closed.
+                match key {
+                    Key::Enter | Key::Esc | Key::Char(' ' | 'i' | 'l' | 'q') => {
+                        state.close_intro();
+                        Some(Event::None)
+                    }
+                    _ => None,
+                }
             }
             Screen::Play(session) => {
                 if session.complete {
@@ -298,10 +347,10 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                         Key::Char('q') | Key::Esc => None,
                         _ => return None,
                     };
-                    state.screen = match next {
-                        Some(i) if !(index + 1 == LEVELS.len() && key != Key::Char('r')) => Screen::Play(Box::new(Session::new(i))),
-                        _ => Screen::Menu { selected: index },
-                    };
+                    match next {
+                        Some(i) if !(index + 1 == LEVELS.len() && key != Key::Char('r')) => state.open(i),
+                        _ => state.screen = Screen::Menu { selected: index },
+                    }
                     scene_changed = true;
                     return Some(Event::Moved);
                 }
@@ -322,16 +371,14 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                             }
                             "n" | "next" => {
                                 let index = (session.index + 1).min(LEVELS.len() - 1);
-                                state.screen = Screen::Play(Box::new(Session::new(index)));
+                                state.open(index);
                                 scene_changed = true;
                             }
                             "mute" | "sound" => {
                                 audio::set_muted(!audio::muted());
                                 state.toast = if audio::muted() { "Sound off".into() } else { "Sound on".into() };
                             }
-                            "help" | "h" => {
-                                state.toast = ":q menu  ·  :e! restart  ·  :n skip  ·  :mute sound".into();
-                            }
+                            "help" | "h" | "intro" | "learn" => state.intro = true,
                             "w" => state.toast = "Saved! (progress saves by itself)".into(),
                             other => state.toast = format!("E492: Not an editor command: {other}"),
                         }
@@ -372,7 +419,7 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                 KeyframeTiming::new(220.0),
             );
         }
-        Event::Blocked(p) => {
+        Event::Trapped(p) => {
             audio::play(Sfx::Locked, 0.6);
             audio::play(Sfx::Bell, 0.4);
             let (cx, cy) = tile_center(*p);
@@ -400,6 +447,25 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
         _ => {}
     }
     place_hero(ui, motion, !scene_changed);
+    // A trap: the wisp hops up onto the block, and is flung back.
+    if let Event::Trapped(p) = &event
+        && let Some(at) = session_value(|s| s.editor.cursor)
+    {
+        let ((fx, fy), (tx, ty)) = (tile_origin(at), tile_origin(*p));
+        let timing = || KeyframeTiming::new(460.0).easing(Easing::Linear);
+        motion.hero_x.keyframes([Keyframe::new(fx), Keyframe::at(0.4, tx).ease(Easing::EaseOut), Keyframe::at(0.55, tx), Keyframe::new(fx).ease(Easing::EaseIn)], timing());
+        motion.hero_y.keyframes([Keyframe::new(fy), Keyframe::at(0.4, ty).ease(Easing::EaseOut), Keyframe::at(0.55, ty), Keyframe::new(fy).ease(Easing::EaseIn)], timing());
+        motion.hop.keyframes(
+            [
+                Keyframe::new(0.0),
+                Keyframe::at(0.25, -LIFT - 10.0).ease(Easing::EaseOut),
+                Keyframe::at(0.4, -LIFT).ease(Easing::EaseIn),
+                Keyframe::at(0.7, -LIFT - 18.0).ease(Easing::EaseOut),
+                Keyframe::new(0.0).ease(Easing::EaseIn),
+            ],
+            timing(),
+        );
+    }
     if scene_changed {
         ui.scene.update(|s| *s += 1);
     }
@@ -1025,8 +1091,11 @@ fn minimap_size(session: &Session) -> (f32, f32) {
     let rows = e.lines.len().max(goal_rows);
     let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(1).max(1);
     let (cw, ch) = minimap_cell(rows, cols);
-    (cols as f32 * cw, rows as f32 * ch)
+    (cols as f32 * cw + MINI_GUTTER.0, rows as f32 * ch + MINI_GUTTER.1)
 }
+
+/// Room around the minimap for its line and column numbers.
+const MINI_GUTTER: (f32, f32) = (20.0, 12.0);
 
 /// The whole isle in a corner: its tiles, the crystals left, the cursor
 /// and the part the stage shows, which follows the camera natively.
@@ -1041,7 +1110,9 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
     let diff = session_diff(session);
     let letters = minimap_letters(cw, ch);
     let font = format!("700 {}px monospace", (ch * 0.78).min(cw * 1.45).floor());
-    let mut painter = Painter::new()
+    let mut painter = draw_minimap_rulers(Painter::new(), e.cursor, rows.min(e.lines.len()), cols, cw, ch)
+        .save()
+        .translate(MINI_GUTTER.0, MINI_GUTTER.1)
         .font(&font)
         .text_align(CanvasTextAlign::Center)
         .text_baseline(CanvasTextBaseline::Middle);
@@ -1151,6 +1222,41 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
             .fill()
             .stroke()
             .restore();
+    }
+    painter.restore()
+}
+
+/// The minimap's line numbers down the left and column numbers along the
+/// top: every 5th (or 10th, when cells are small), and the cursor's own.
+fn draw_minimap_rulers(painter: Painter, cur: Pos, rows: usize, cols: usize, cw: f32, ch: f32) -> Painter {
+    let (gx, gy) = MINI_GUTTER;
+    let accent = 0xfff3b0;
+    let mut painter = painter.font("600 9px monospace").text_baseline(CanvasTextBaseline::Middle);
+    let row_step = if ch >= 9.0 { 5 } else { 10 };
+    painter = painter.text_align(CanvasTextAlign::Right);
+    for row in 0..rows {
+        let n = row + 1;
+        let here = row == cur.row;
+        // Numbers closer than a label's height to the cursor's would overlap it.
+        let near = row.abs_diff(cur.row) as f32 * ch < 9.0 && !here;
+        if (here || n == 1 || n % row_step == 0) && !near {
+            painter = painter
+                .fill_color(if here { hex(accent) } else { hexa(0xece6ff, 0.5) })
+                .fill_text(&n.to_string(), gx - 4.0, gy + row as f32 * ch + ch / 2.0);
+        }
+    }
+    let col_step = if cw >= 7.0 { 5 } else { 10 };
+    painter = painter.text_align(CanvasTextAlign::Center);
+    for col in 0..cols {
+        let n = col + 1;
+        let here = col == cur.col;
+        let width = n.to_string().len() as f32 * 6.0;
+        let near = (col.abs_diff(cur.col) as f32 * cw) < width && !here;
+        if (here || n == 1 || n % col_step == 0) && !near {
+            painter = painter
+                .fill_color(if here { hex(accent) } else { hexa(0xece6ff, 0.5) })
+                .fill_text(&n.to_string(), gx + col as f32 * cw + cw / 2.0, gy / 2.0);
+        }
     }
     painter
 }
@@ -1285,7 +1391,9 @@ pub fn App() -> impl IntoElement {
         stage: signal((900.0_f32, 520.0_f32)),
         window: signal((1200.0_f32, 800.0_f32)),
         burst_at: signal((0.0_f32, 0.0_f32)),
+        beat: signal(0_u64),
     };
+    set_interval(std::time::Duration::from_millis(520), move || ui.beat.update(|b| *b += 1));
     let motion = Rc::new(Motion {
         hero_x: animated_value(0.0),
         hero_y: animated_value(0.0),
@@ -1365,7 +1473,7 @@ fn menu_screen(ui: Ui) -> impl IntoElement {
         });
         if let Some(i) = selected {
             let mut options = RevealOptions::default();
-            options.vertical = ScrollAlignment::Nearest;
+            options.vertical = ScrollAlignment::Center;
             reveal[i].reveal(options);
         }
     });
@@ -1404,7 +1512,7 @@ fn menu_screen(ui: Ui) -> impl IntoElement {
                     .cursor_pointer()
                     .element_ref(&row_ref)
                     .on_press(move || {
-                        with_state(|s| s.screen = Screen::Play(Box::new(Session::new(i))));
+                        with_state(|s| s.open(i));
                         ui.scene.update(|s| *s += 1);
                     })
                     .child(text(format!("{:>2}", i + 1)).font_family(MONO).text_color(hexa(0xffffff, 0.45)).w(px(22.0)))
@@ -1709,6 +1817,7 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                 .child(view().flex_1().gap_2().child(stage).child(trail))
                 .child(dynamic(move || (ui.window.get().0 >= 980.0).then(|| side_panel(index, ui)))),
         )
+        .child(intro::intro_modal(ui))
         .into_element()
 }
 
@@ -1905,7 +2014,7 @@ fn side_panel(index: usize, ui: Ui) -> impl IntoElement {
         .child(view().flex_1())
         .child(text(format!("Tip: {}", level.tip)).text_size(px(12.5)).line_height(px(18.0)).text_color(hexa(0xece6ff, 0.55)))
         .child(
-            text(":e! restart · :q menu · :n skip · :mute")
+            text(":h lessons · :e! restart · :q menu · :n skip · :mute")
                 .font_family(MONO)
                 .text_size(px(11.5))
                 .text_color(hexa(0xece6ff, 0.4)),
@@ -1952,7 +2061,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         let (index, keys, stars, par) = session_value(|s| (s.index, format_keys(&s.keys), s.stars(), s.par())).unwrap();
         let level = &LEVELS[index];
         let count = session_value(|s| s.keys.len()).unwrap();
-        let (habits, blocked) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.blocked)).unwrap();
+        let (habits, trapped) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.trapped)).unwrap();
         let last = index + 1 == LEVELS.len();
         let verdict = if count < par {
             "Under par! You beat the golf solution."
@@ -1999,15 +2108,15 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .child(text(format!("GOLF SOLUTION · {par}")).text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)).mt(px(8.0)))
                                 .child(spoiler(format_keys(&vim::parse_keys(level.solution)))),
                         )
-                        .child((!habits.is_empty() || blocked > 0).then(|| {
+                        .child((!habits.is_empty() || trapped > 0).then(|| {
                             view()
                                 .w_full()
                                 .gap_1()
                                 .mt(px(4.0))
                                 .child(text("HABITS TO BREAK").text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.5)))
                                 .children(habits.into_iter().take(4).map(|h| text(format!("• {h}")).font_family(MONO).text_size(px(13.0)).text_color(hex(0xffd76b))))
-                                .child((blocked > 0).then(|| {
-                                    text(format!("• blocked by a trap {blocked}×: aim past it in one move"))
+                                .child((trapped > 0).then(|| {
+                                    text(format!("• thrown back by a trap {trapped}×: jump past it in one move"))
                                         .text_size(px(13.0))
                                         .text_color(hex(0xff8a70))
                                 }))

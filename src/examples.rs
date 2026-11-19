@@ -1,0 +1,120 @@
+//! Little worked examples for each isle's intro: a snippet of text, where
+//! the cursor starts (marked `▮`, before its character) and the keys to
+//! press. They run on the real engine, so they show exactly what happens.
+
+use crate::vim::{Editor, Key, parse_keys, pos};
+
+/// The cursor's place in an example's text: just before this mark.
+pub const CURSOR: char = '▮';
+
+/// One step of an example being played: the editor after `typed` keys.
+pub struct Frame {
+    pub editor: Editor,
+    pub typed: usize,
+}
+
+/// The editor before any key, and after each one.
+pub fn frames(text: &str, keys: &str) -> Vec<Frame> {
+    let mut at = pos(0, 0);
+    let mut plain = String::new();
+    let (mut row, mut col) = (0, 0);
+    for c in text.chars() {
+        if c == CURSOR {
+            at = pos(row, col);
+            continue;
+        }
+        plain.push(c);
+        if c == '\n' {
+            row += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    let mut editor = Editor::new(&plain).with_cursor(at);
+    let keys: Vec<Key> = parse_keys(keys);
+    let mut out = vec![Frame { editor: editor.clone(), typed: 0 }];
+    for (i, &k) in keys.iter().enumerate() {
+        editor.feed(k);
+        out.push(Frame { editor: editor.clone(), typed: i + 1 });
+    }
+    out
+}
+
+/// The examples shown before isle `title`: (text with `▮`, keys).
+pub fn examples(title: &str) -> &'static [(&'static str, &'static str)] {
+    match title {
+        "First Steps" => &[("▮cat\ndog", "lljh"), ("hj▮kl", "hhll")],
+        "Counting Sheep" => &[("▮one two three", "4l"), ("▮a\nb\nc\nd", "3j")],
+        "Word Hopping" => &[("▮the quick brown fox", "ww"), ("the quick br▮own", "b"), ("▮the quick brown", "ee")],
+        "Punctuation Pass" => &[("▮a.b.c d.e.f", "W"), ("▮x(1,2) y", "E"), ("x(1,2) ▮y", "B")],
+        "Edge of the World" => &[("   ind▮ented line", "0"), ("▮   indented", "^"), ("   ▮indented line", "$")],
+        "Long Jumps" => &[("▮line 1\nline 2\nline 3\nline 4", "G"), ("line 1\nline 2\n▮line 3", "gg"), ("▮a\nb\nc\nd", "3G")],
+        "Seek and Find" => &[("▮go fetch, the ball", "f,"), ("▮a,b,c,d", "f,;;"), ("▮call(x)", "t("), ("a,b,c▮,d", "F,")],
+        "Paragraph Isles" => &[("▮one\ntwo\n\nthree\n\nfour", "}}"), ("one\n\ntwo\nth▮ree", "{")],
+        "Mirror Matching" => &[("▮if (a(b)) x", "%"), ("f(a, [1, 2▮])", "%")],
+        "Search Party" => &[("▮cat dog cat bird", "/cat<CR>n"), ("▮dog cat dog", "*")],
+        "Chomp" => &[("hel▮llo", "x"), ("▮bat", "rc"), ("▮oops", "xu")],
+        "Demolition" => &[("▮delete me keep", "dw"), ("keep ▮the rest", "D"), ("▮line one\nline two", "dd"), ("▮a,b,c", "dt,")],
+        "Change of Heart" => &[("▮hello world", "cwbye<Esc>"), ("x = ▮old;", "Cnew;<Esc>"), ("▮abc", "sX<Esc>")],
+        "Insert Coin" => &[("▮list", "Imy <Esc>"), ("▮list", "A:<Esc>"), ("▮a\nc", "ob<Esc>")],
+        "Copycat" => &[("▮hip hooray", "ywP"), ("▮==", "yy2p")],
+        "Time Travel" => &[("▮x\ny\nz", "A;<Esc>j.j."), ("▮abc", "xu<C-r>")],
+        "Inside Out" => &[("say \"▮hi there\"", "ci\"yo<Esc>"), ("f(▮a, b)", "di("), ("a ▮word here", "daw")],
+        "Highlights" => &[("▮shout this", "veU"), ("▮a\nb\nc", "Vjd"), ("▮one\ntwo", "J")],
+        "Ex Marks the Spot" => &[("▮foo is foo", ":s/foo/bar/<CR>"), ("▮foo\nfoo foo", ":%s/foo/bar/g<CR>"), ("▮a\nb\nc", ":3<CR>")],
+        "The Refactor" => &[("▮fn old() {}", "wcwnew<Esc>"), ("▮i32 + i32", ":s/32/64/g<CR>")],
+        "Named Vaults" => &[("▮lamp\ncrate\nvault:", "\"addj\"ap"), ("▮keep\njunk", "yyj\"_ddp")],
+        "Waymarks" => &[("▮start\nmiddle\nend", "maG`a"), ("keep\n▮cut\ncut\nkeep", "majd'a")],
+        "Tally Marks" => &[("x = ▮7", "<C-a>"), ("▮year 1999", "27<C-a>"), ("▮hp: 10", "3<C-x>")],
+        "Wind-up Golem" => &[("▮a\nb\nc", "qaA;<Esc>jq@a"), ("▮1\n2\n3", "qaI-<Esc>jq@a@@")],
+        "Assembly Line" => &[("▮item 1", "qayyp<C-a>q2@a")],
+        "Terraces" => &[("▮code", ">>"), ("▮a\nb", ">j"), ("        ▮x", "<<")],
+        "Shouting Match" => &[("▮hello world", "gUiw"), ("▮Mixed Case", "guu"), ("▮abc def", "g~w")],
+        "Overwrite" => &[("| ▮????? |", "Rhello<Esc>"), ("▮abcd", "RXY<BS><Esc>")],
+        "Ice Columns" => &[("▮red\ngreen\nblue", "<C-v>jjI- <Esc>"), ("▮a\nbb\nccc", "<C-v>jj$A;<Esc>"), ("▮# x\n# y", "<C-v>jld")],
+        "Next Match" => &[("▮foo bar foo baz", "/foo<CR>cgnqux<Esc>."), ("▮tmp tmpdir tmp", "*")],
+        "Tag, You're It" => &[("<b>▮bold</b>", "cithi<Esc>"), ("<p><b>▮x</b> y</p>", "dat"), ("▮a\nb\n\nc", "dap")],
+        "Global Decree" => &[("▮keep\n# drop\nkeep\n# drop", ":g/#/d<CR>"), ("▮x1\ny\nx2", ":v/x/d<CR>"), ("▮b\nc\na", ":sort<CR>")],
+        "Moving Day" => &[("▮a\nb\nc\nd", ":3,4m0<CR>"), ("▮a\nb\nc", ":$t0<CR>"), ("▮a\nb\nc", "Vj:d<CR>")],
+        "Normal Order" => &[("▮fn a\n// x\nfn b", ":g/fn/norm A;<CR>"), ("▮a\nb", ":%norm I- <CR>")],
+        "The Grand Refactor" => &[("▮a=1\nb=2", ":%s/=/ = /<CR>"), ("▮x\ny", "qaIconst <Esc>jq@a")],
+        _ => &[],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::levels::LEVELS;
+    use crate::vim::Outcome;
+
+    #[test]
+    fn every_isle_has_examples_that_run_cleanly() {
+        for level in LEVELS {
+            let list = examples(level.title);
+            assert!(!list.is_empty(), "{} has no examples", level.title);
+            for &(text, keys) in list {
+                assert_eq!(text.matches(CURSOR).count(), 1, "{}: {text:?} needs one cursor mark", level.title);
+                let plain: String = text.chars().filter(|c| *c != CURSOR).collect();
+                let at = frames(text, "")[0].editor.cursor;
+                let mut e = Editor::new(&plain).with_cursor(at);
+                for k in parse_keys(keys) {
+                    let out = e.feed(k);
+                    assert!(!matches!(out, Outcome::Bell(ref m) if !m.is_empty()), "{}: {keys} on {text:?}: {out:?}", level.title);
+                }
+                assert_ne!(frames(text, keys).last().map(|f| f.editor.text()), None);
+            }
+        }
+    }
+
+    #[test]
+    fn frames_follow_the_keys() {
+        let f = frames("▮the quick", "w");
+        assert_eq!(f.len(), 2);
+        assert_eq!(f[0].editor.cursor, pos(0, 0));
+        assert_eq!(f[1].editor.cursor, pos(0, 4));
+        let f = frames("ab\n▮cd", "x");
+        assert_eq!(f[1].editor.text(), "ab\nd");
+    }
+}

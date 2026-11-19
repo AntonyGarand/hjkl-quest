@@ -15,8 +15,8 @@ pub enum Event {
     Locked(char),
     Complete,
     Command(String),
-    /// The command would have ended on a trap, so it didn't happen.
-    Blocked(Pos),
+    /// The cursor landed on a trap (here) and was thrown back.
+    Trapped(Pos),
     None,
 }
 
@@ -30,17 +30,18 @@ pub struct Session {
     allowed: String,
     /// Where the `:` that opened the command line is in `keys`.
     cmd_start: Option<usize>,
-    /// Solid tiles the cursor can never land on (it may jump over them).
+    /// Tiles that throw the cursor back when it lands on them (it may jump
+    /// over them).
     pub traps: Vec<Pos>,
-    /// Commands a trap blocked this run.
-    pub blocked: usize,
+    /// Times a trap threw the player back this run.
+    pub trapped: usize,
     pub coach: Coach,
     /// The last tip from the coach, until the next key.
     pub tip: String,
 }
 
 /// The game's own `:` commands: always available, and free.
-pub const GAME_COMMANDS: &[&str] = &["q", "q!", "wq", "x", "levels", "menu", "e!", "restart", "r", "n", "next", "mute", "sound", "help", "h", "w"];
+pub const GAME_COMMANDS: &[&str] = &["q", "q!", "wq", "x", "levels", "menu", "e!", "restart", "r", "n", "next", "mute", "sound", "help", "h", "intro", "learn", "w"];
 
 /// How a key of an unlock list reads: `w`, or `Ctrl-a`.
 pub fn key_name(c: char) -> String {
@@ -82,7 +83,7 @@ impl Session {
             allowed: unlocked(index),
             cmd_start: None,
             traps: level.traps(),
-            blocked: 0,
+            trapped: 0,
             coach: Coach::default(),
             tip: String::new(),
         };
@@ -183,22 +184,21 @@ impl Session {
         let revision = self.editor.revision;
         let cursor = self.editor.cursor;
         let (before_mode, before_pending) = (self.editor.mode, self.editor.pending());
-        // Traps are solid: a command that would end on one never happens.
-        let before = (!self.traps.is_empty()).then(|| self.editor.clone());
         let outcome = self.editor.feed(key);
         self.message.clear();
         self.tip.clear();
-        if let Some(before) = before
+        // Landing on a trap throws the wisp back where it came from; the
+        // keys still count.
+        if !matches!(self.editor.mode, Mode::Command { .. } | Mode::Insert | Mode::Replace)
             && self.editor.pending().is_empty()
-            && !matches!(self.editor.mode, Mode::Command { .. })
+            && self.editor.cursor != cursor
             && self.traps.contains(&self.editor.cursor)
         {
             let at = self.editor.cursor;
-            self.editor = before;
-            self.editor.cancel_pending();
-            self.blocked += 1;
-            self.message = "Blocked! You can't land on a trap: jump over it in one move".into();
-            return Event::Blocked(at);
+            self.editor.set_cursor(cursor);
+            self.trapped += 1;
+            self.message = "Ouch, a trap! It threw you back: jump over it in one move".into();
+            return Event::Trapped(at);
         }
         // A finished normal-mode command goes to the coach.
         if before_mode == Mode::Normal && self.editor.pending().is_empty() && matches!(outcome, Outcome::Ok) {
@@ -284,7 +284,7 @@ mod tests {
                 assert!(!s.complete, "level {i} {} completes early after {}", level.title, format_keys(&keys[..k]));
                 let event = s.press(key);
                 assert!(
-                    !matches!(event, Event::Locked(_) | Event::Bell | Event::Blocked(_)),
+                    !matches!(event, Event::Locked(_) | Event::Bell | Event::Trapped(_)),
                     "level {i} {}: key {} ({k}) gave {event:?}: {}\nbuffer:\n{}",
                     level.title,
                     key,
@@ -369,33 +369,25 @@ mod tests {
     }
 
     #[test]
-    fn traps_block_single_steps_but_not_jumps() {
+    fn traps_throw_back_single_steps_but_not_jumps() {
         // Counting Sheep: traps every four tiles along the first row.
         let mut s = Session::new(1);
         let mut events = Vec::new();
         for _ in 0..5 {
             events.push(s.press(Key::Char('l')));
         }
-        // The wisp never stands on the trap: it stays right before it.
-        assert_eq!(events[3], Event::Blocked(Pos { row: 0, col: 4 }));
-        assert_eq!(events[4], Event::Blocked(Pos { row: 0, col: 4 }));
+        assert_eq!(events[3], Event::Trapped(Pos { row: 0, col: 4 }));
+        assert_eq!(events[4], Event::Trapped(Pos { row: 0, col: 4 }));
         assert_eq!(s.editor.cursor, Pos { row: 0, col: 3 });
-        assert_eq!(s.blocked, 2);
-        // Blocked moves still cost their keys.
+        assert_eq!(s.trapped, 2);
+        // The keys still count.
         assert_eq!(s.keys.len(), 5);
         // A count jumps over the traps.
         let mut s = Session::new(1);
         for k in parse_keys("15l") {
-            assert!(!matches!(s.press(k), Event::Blocked(_)));
+            assert!(!matches!(s.press(k), Event::Trapped(_)));
         }
         assert_eq!(s.editor.cursor, Pos { row: 0, col: 15 });
-        // So do word motions; one that would end on a trap does nothing.
-        let mut s = Session::new(2); // Word Hopping: a trap on the m of "jumps"
-        let start = s.editor.cursor;
-        s.press(Key::Char('2'));
-        assert_eq!(s.press(Key::Char('l')), Event::Blocked(Pos { row: 0, col: 22 }));
-        assert_eq!(s.editor.cursor, start);
-        assert_eq!(s.editor.pending(), "");
         for level in LEVELS {
             for t in level.traps() {
                 assert!(!level.gems().contains(&t) && level.start() != t, "{}: trap on a mark", level.title);

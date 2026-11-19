@@ -19,15 +19,17 @@ native desktop app on Windows, macOS and Linux.
   (in place) or amber (missing), with a count of what's left to add and remove.
 - **Rulers** number the lines (with each line's distance from the cursor, for counts like `5j`) and the
   columns (every 5), so distances can be judged at a glance.
-- **Traps**: spiked blocks on the movement isles that the cursor can never land on. A command that would end
-  on one simply doesn't happen (its keys still count), so `lllll` stops dead while `5l`, `e` or `f{c}` jump over.
+- **Traps ▲**: spiked blocks on the movement isles. Land on one and it throws the wisp back where it came from
+  (the keys still count): stepping `lllll` gets caught, while `5l`, `e` or `f{c}` jump clean over.
+- **Lessons first.** The first time you open an isle, a card lists what it teaches and plays each command on a
+  small looping example, run on the game's own vim engine. `:h` brings it back.
 - **A habit coach** watches your commands and names the faster one you've already learned: `llll` → `4l` / `e`,
   `0i` → `I`, `$a` → `A`, `dwi` → `cw`, `d$` → `D`, `lh` (moves that cancel out)… The completion card lists the
   habits to break.
 - **Vim golf.** Every isle has a *par*: the keystrokes of a short known solution. Finish at par or under for
   three stars, and compare your keys with the golf line afterwards (hidden until you hover it, so it never
   spoils a retry).
-- A **minimap** in the corner shows the whole isle with its letters, the crystals left, what's missing and the
+- A **minimap** in the corner shows the whole isle with its letters and line/column numbers, the crystals left, what's missing and the
   part of it on screen.
 - `:q` returns to the map, `:e!` restarts the isle, `:n` skips it, `:mute` toggles sound. These work from the
   first isle and never cost keystrokes; real ex commands (`:s`, `:%s`, `:{n}`) unlock on isle 19.
@@ -70,6 +72,8 @@ For development, `HJKL_LEVEL=12 cargo run` opens an isle directly.
 |---|---|
 | `src/vim.rs` | A self-contained vim emulator: motions, operators, text objects, insert/replace/visual/block modes, search, registers, marks, macros, ex ranges with `:s :g :norm :m :t :sort`, undo/redo, `.` |
 | `src/coach.rs` | The habit coach: slow command patterns and the faster command for each |
+| `src/examples.rs` | The worked examples of each isle's intro, played through the engine |
+| `src/intro.rs` | The intro card shown before an isle |
 | `src/diff.rs` | How the buffer differs from the goal: extra characters, characters in place, and where missing text goes |
 | `src/levels.rs` | The campaign: maps, crystals, goals, unlocked keys and each isle's golf solution |
 | `src/game.rs` | A level being played: key locking, crystals, completion, stars. Its tests replay every golf solution and check it clears the isle at exactly par. |
