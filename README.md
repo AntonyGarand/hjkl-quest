@@ -4,7 +4,8 @@ Learn vim by walking the **Buffer Archipelago**: forty-seven floating isles, eac
 commands. The world *is* the buffer: every character is a tile, the cursor is a small wisp that hops between
 them, and every command you learn moves you (or reshapes the land) exactly as it would in vim.
 
-**Play in the browser:** https://antonygarand.github.io/hjkl-quest/
+**Play in the browser:** https://antonygarand.github.io/hjkl-quest/ (on a phone or tablet, tap ⌨ for the
+keyboard: a bar above it adds Esc, Ctrl, Tab and `:`)
 
 Built in Rust with [Native Shell (nsh)](https://nsh.dev): the same crate runs as a web app (WebAssembly) and as a
 native desktop app on Windows, macOS and Linux.
@@ -124,6 +125,7 @@ For development, `HJKL_LEVEL=12 cargo run` opens an isle directly.
 | `src/replay.rs` | A run played back beside the golf line |
 | `src/screens.rs` | The grammar grid, the boss banner and the hint card |
 | `web/splash.*` | The web loading screen (night sky, a wisp hopping on h j k l, download progress, a vim tip), put into the page `nsh package` writes by `web/splash.py` in CI |
+| `web/mobile.js` | The on-screen keyboard for phones and tablets: a ⌨ button, a bar of Esc, Ctrl, Tab and `:`, and typed text sent on as key presses (also put in by `web/splash.py`) |
 | `src/lib.rs` | The Native Shell UI: the 3/4-isometric board on canvases, animated values for the wisp, camera and sky, and the menus |
 
 CI (`.github/workflows/ci.yml`) runs the tests, deploys the web build to GitHub Pages and packages the desktop apps

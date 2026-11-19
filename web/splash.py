@@ -1,6 +1,7 @@
 """Puts HJKL Quest's loading screen into the page `nsh package --target web`
 wrote: the night sky, the wisp hopping on h j k l, a real download bar and
-a vim tip, in place of the default spinner.
+a vim tip, in place of the default spinner; and an on-screen keyboard for
+phones and tablets (mobile.js).
 
     python3 web/splash.py SITE_DIR
 
@@ -37,9 +38,19 @@ size = os.path.getsize(wasm[0])
 
 # The sky's colour from the first paint, and in the browser's chrome.
 page = re.sub(r'<meta name="theme-color" content="#[0-9a-fA-F]{6}">', '<meta name="theme-color" content="#0a0f24">', page, count=1)
+# Android shrinks the page above its on-screen keyboard instead of
+# covering the game with it.
+page = replace_once(
+    page,
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">',
+    "viewport tag",
+)
 # The progress script goes before the page's own, which starts the download.
 script = read("splash.js").replace("__WASM_SIZE__", str(size))
 page = replace_once(page, "<script>const fetches", f"<script>\n{script}</script>\n<script>const fetches", "download script")
+# The on-screen keyboard for phones and tablets, last.
+page = replace_once(page, "</body>", "<script>\n" + read("mobile.js") + "</script>\n</body>", "end of the body")
 page = replace_once(page, "</style>\n</head>", read("splash.css") + "</style>\n</head>", "end of the styles")
 page = re.sub(
     r'(<div id="status" role="status" aria-live="polite">)<div class="spinner" aria-label="Loading"></div>(</div>)',
