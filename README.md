@@ -4,7 +4,7 @@ Learn vim by walking the **Buffer Archipelago**: fifty-seven floating isles, eac
 commands. The world *is* the buffer: every character is a tile, the cursor is a small wisp that hops between
 them, and every command you learn moves you (or reshapes the land) exactly as it would in vim.
 
-**Play in the browser:** https://antonygarand.github.io/hjkl-quest/ (on a phone or tablet, tap ⌨ for the
+**Play in the browser:** https://vim.garand.dev/ (on a phone or tablet, tap ⌨ for the
 keyboard: a bar above it adds Esc, Ctrl, Tab and `:`)
 
 Built in Rust with [Native Shell (nsh)](https://nsh.dev): the same crate runs as a web app (WebAssembly) and as a
@@ -54,7 +54,7 @@ native desktop app on Windows, macOS and Linux.
 - **A habit coach** watches your commands and names the faster one you've already learned: `llll` → `4l` / `e`,
   `0i` → `I`, `$a` → `A`, `dwi` → `cw`, `d$` → `D`, `lh` (moves that cancel out)… The completion card lists the
   habits to break.
-- **The address follows you.** On the web the current isle is in the URL (`…/hjkl-quest/#looking-back`, `#map`
+- **The address follows you.** On the web the current isle is in the URL (`vim.garand.dev/#looking-back`, `#map`
   on the map), so reloading restarts the isle, links open an isle directly, and back/forward move between them.
 - **Use the lesson.** Each isle names its main ideas (Word Hopping: `w`, and `b` or `e`; Search Party: `/` and
   `n`…), ticked off as you use them. Reaching the goal without them fails the isle: no stars, and the card says
