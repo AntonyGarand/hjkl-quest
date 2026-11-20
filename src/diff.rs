@@ -5,6 +5,7 @@
 
 use crate::vim::{Pos, pos};
 
+/// What to change for the buffer to become the goal.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Diff {
     /// Per buffer character: not where the goal wants it (to delete or change).
@@ -64,6 +65,7 @@ pub fn lcs<T: PartialEq>(a: &[T], b: &[T], late: bool) -> Vec<(usize, usize)> {
     out
 }
 
+/// How `buf` differs from `goal`.
 pub fn diff(buf: &[Vec<char>], goal: &[Vec<char>]) -> Diff {
     let mut d = Diff {
         wrong: buf.iter().map(|l| vec![true; l.len()]).collect(),
@@ -146,7 +148,7 @@ mod tests {
     fn extra_and_changed_characters() {
         let d = diff(&lines("bad bad good"), &lines("good"));
         assert_eq!(d.wrong_count(), 8);
-        assert!(d.inserts.is_empty());
+        assert_eq!(d.inserts, vec![], "nothing to insert");
         let d = diff(&lines("cat"), &lines("cut"));
         assert_eq!(d.wrong[0], vec![false, true, false]);
         assert_eq!(d.inserts, vec![(pos(0, 2), "u".into())]);

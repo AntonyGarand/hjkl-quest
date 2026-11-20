@@ -74,31 +74,33 @@ pub fn pair(token: &str) -> Option<(&'static str, &'static str)> {
         r if r.starts_with('/') || r.starts_with('?') => "/",
         r if r.chars().count() == 2 && matches!(r.chars().next(), Some('f' | 't' | 'F' | 'T')) => &r[..1],
         r if r.len() >= 2 && (r.starts_with('i') || r.starts_with('a')) => {
-            let side = &r[..1];
-            let obj = match r[1..].chars().next()? {
-                '(' | ')' | 'b' => "(",
-                '{' | '}' | 'B' => "{",
-                '[' | ']' => "[",
-                '"' | '\'' | '`' => "\"",
-                'w' => "w",
-                't' => "t",
-                'p' => "p",
-                _ => return None,
-            };
-            return NOUNS
-                .iter()
-                .map(|(n, _)| *n)
-                .find(|n| *n == format!("{side}{obj}"))
-                .map(|n| (verb, n));
+            return find_noun(&text_object(r)?).map(|n| (verb, n));
         }
         "N" => "n",
         r => r,
     };
-    NOUNS
-        .iter()
-        .map(|(n, _)| *n)
-        .find(|n| *n == noun)
-        .map(|n| (verb, n))
+    find_noun(noun).map(|n| (verb, n))
+}
+
+/// The grid's name for text object `r` (`ib` is `i(`, `a'` is `a"`).
+fn text_object(r: &str) -> Option<String> {
+    let side = &r[..1];
+    let obj = match r[1..].chars().next()? {
+        '(' | ')' | 'b' => "(",
+        '{' | '}' | 'B' => "{",
+        '[' | ']' => "[",
+        '"' | '\'' | '`' => "\"",
+        'w' => "w",
+        't' => "t",
+        'p' => "p",
+        _ => return None,
+    };
+    Some(format!("{side}{obj}"))
+}
+
+/// The column named `name`, if the grid has one.
+fn find_noun(name: &str) -> Option<&'static str> {
+    NOUNS.iter().map(|(n, _)| *n).find(|n| *n == name)
 }
 
 /// The key a learned pair is saved under.
@@ -111,7 +113,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn commands_split_into_verb_and_noun() {
+    fn counts_registers_and_doubled_operators_are_skipped() {
         assert_eq!(pair("dw"), Some(("d", "w")));
         assert_eq!(pair("3dw"), Some(("d", "w")));
         assert_eq!(pair("d3w"), Some(("d", "w")));
@@ -121,6 +123,10 @@ mod tests {
         assert_eq!(pair("gUgU"), Some(("gU", "line")));
         assert_eq!(pair("gUiw"), Some(("gU", "iw")));
         assert_eq!(pair("\"ayy"), Some(("y", "line")));
+    }
+
+    #[test]
+    fn objects_and_motions_are_nouns() {
         assert_eq!(pair("ci\""), Some(("c", "i\"")));
         assert_eq!(pair("da'"), Some(("d", "a\"")));
         assert_eq!(pair("dib"), Some(("d", "i(")));
