@@ -1,0 +1,6 @@
+# Keep functions small and simple.
+too-many-lines-threshold = 60
+cognitive-complexity-threshold = 20
+too-many-arguments-threshold = 6
+excessive-nesting-threshold = 5
+type-complexity-threshold = 250

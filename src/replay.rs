@@ -1,7 +1,11 @@
 //! A finished run played back beside the golf solution, key by key: where
 //! the two part ways is where the keystrokes went.
 
-use super::*;
+use super::{
+    Accessible, BUG, FluentBuilder, FontWeight, GEM, IntoElement, Key, MONO, ParentElement, Pos, SELECT,
+    Screen, Session, Styled, Ui, chip, dynamic, effect, format_keys, game, hex, hexa, is_selected,
+    mode_color, px, text, view, vim, with_state,
+};
 use game::Bug;
 
 /// The isle after some keys.
@@ -24,7 +28,11 @@ pub(crate) struct Replay {
 /// Plays `keys` on a fresh copy of the isle, keeping a snapshot per key.
 fn play(session: &Session, keys: &[Key]) -> Vec<Snap> {
     let mut s = Session::custom(session.level(), session.index);
-    let snap = |s: &Session| Snap { editor: s.editor.clone(), gems: s.gems.clone(), bugs: s.bugs.clone() };
+    let snap = |s: &Session| Snap {
+        editor: s.editor.clone(),
+        gems: s.gems.clone(),
+        bugs: s.bugs.clone(),
+    };
     let mut out = vec![snap(&s)];
     for &k in keys {
         s.press(k);
@@ -34,7 +42,7 @@ fn play(session: &Session, keys: &[Key]) -> Vec<Snap> {
 }
 
 impl Replay {
-    pub fn new(session: Session) -> Replay {
+    pub(crate) fn new(session: Session) -> Replay {
         let golf = vim::parse_keys(session.level().solution);
         let yours = session.keys.clone();
         Replay {
@@ -51,7 +59,7 @@ impl Replay {
     }
 
     /// A key on the replay screen; true to leave it.
-    pub fn key(&mut self, key: Key) -> bool {
+    pub(crate) fn key(&mut self, key: Key) -> bool {
         match key {
             Key::Char(' ' | 'p') => {
                 if self.step >= self.last() {
@@ -110,7 +118,15 @@ fn side(label: &str, keys: &[Key], snaps: &[Snap], step: usize, color: u32) -> i
             let gem = snap.gems.iter().any(|&(g, got)| g == p && !got);
             let bug = snap.bugs.iter().any(|b| b.at == p);
             let cursor = p == e.cursor;
-            let shown = if bug && !cursor { '✱' } else if gem && !cursor { '◆' } else if c == ' ' { '\u{a0}' } else { c };
+            let shown = if bug && !cursor {
+                '✱'
+            } else if gem && !cursor {
+                '◆'
+            } else if c == ' ' {
+                '\u{a0}'
+            } else {
+                c
+            };
             let glyph = text(shown.to_string())
                 .font_family(MONO)
                 .text_size(px(15.0))
@@ -125,7 +141,13 @@ fn side(label: &str, keys: &[Key], snaps: &[Snap], step: usize, color: u32) -> i
                     hex(0xece6ff)
                 });
             let cell = view().child(glyph);
-            if cursor { cell.bg(hex(mode_color(e))).rounded(px(2.0)) } else if is_selected(e, p) { cell.bg(hexa(SELECT, 0.75)) } else { cell }
+            if cursor {
+                cell.bg(hex(mode_color(e))).rounded(px(2.0))
+            } else if is_selected(e, p) {
+                cell.bg(hexa(SELECT, 0.75))
+            } else {
+                cell
+            }
         }))
     });
     view()
@@ -142,18 +164,50 @@ fn side(label: &str, keys: &[Key], snaps: &[Snap], step: usize, color: u32) -> i
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .child(text(label.to_string()).text_size(px(12.0)).letter_spacing(px(1.5)).font_weight(FontWeight::BOLD).text_color(hex(color)))
+                .child(
+                    text(label.to_string())
+                        .text_size(px(12.0))
+                        .letter_spacing(px(1.5))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(hex(color)),
+                )
                 .child(view().flex_1())
-                .child(text(format!("{at} / {} keys{}", keys.len(), if done { "  ✓ done" } else { "" })).font_family(MONO).text_size(px(13.0)).text_color(hexa(0xece6ff, 0.7))),
+                .child(
+                    text(format!(
+                        "{at} / {} keys{}",
+                        keys.len(),
+                        if done { "  ✓ done" } else { "" }
+                    ))
+                    .font_family(MONO)
+                    .text_size(px(13.0))
+                    .text_color(hexa(0xece6ff, 0.7)),
+                ),
         )
         .child(
             view()
                 .flex_row()
                 .flex_wrap()
-                .child(text(format_keys(&keys[..at])).font_family(MONO).text_size(px(14.0)).font_weight(FontWeight::BOLD).text_color(hex(0xffd76b)))
-                .child(text(format_keys(&keys[at..])).font_family(MONO).text_size(px(14.0)).text_color(hexa(0xffffff, 0.3))),
+                .child(
+                    text(format_keys(&keys[..at]))
+                        .font_family(MONO)
+                        .text_size(px(14.0))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(hex(0xffd76b)),
+                )
+                .child(
+                    text(format_keys(&keys[at..]))
+                        .font_family(MONO)
+                        .text_size(px(14.0))
+                        .text_color(hexa(0xffffff, 0.3)),
+                ),
         )
-        .child(view().p(px(8.0)).rounded(px(8.0)).bg(hexa(0x05030f, 0.6)).children(rows))
+        .child(
+            view()
+                .p(px(8.0))
+                .rounded(px(8.0))
+                .bg(hexa(0x05030f, 0.6))
+                .children(rows),
+        )
 }
 
 pub(crate) fn replay_screen(ui: Ui) -> impl IntoElement {
@@ -175,8 +229,18 @@ pub(crate) fn replay_screen(ui: Ui) -> impl IntoElement {
         .child(
             view()
                 .gap_1()
-                .child(text("REPLAY").text_size(px(12.0)).letter_spacing(px(2.0)).text_color(hexa(0xc9b8ff, 0.75)))
-                .child(text(title).text_size(px(26.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0))),
+                .child(
+                    text("REPLAY")
+                        .text_size(px(12.0))
+                        .letter_spacing(px(2.0))
+                        .text_color(hexa(0xc9b8ff, 0.75)),
+                )
+                .child(
+                    text(title)
+                        .text_size(px(26.0))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(hex(0xfff3b0)),
+                ),
         )
         .child(dynamic(move || {
             ui.tick.get();
@@ -196,13 +260,27 @@ pub(crate) fn replay_screen(ui: Ui) -> impl IntoElement {
                 let note = if y <= g {
                     format!("You matched the golf line: {y} keys against {g}.")
                 } else {
-                    format!("{} keys over par. Watch where the golf line moves further per key.", y - g)
+                    format!(
+                        "{} keys over par. Watch where the golf line moves further per key.",
+                        y - g
+                    )
                 };
-                let habits: Vec<String> = r.session.coach.spotted.iter().map(|h| format!("• {}: {}", h.label, h.tip)).collect();
+                let habits: Vec<String> = r
+                    .session
+                    .coach
+                    .spotted
+                    .iter()
+                    .map(|h| format!("• {}: {}", h.label, h.tip))
+                    .collect();
                 view()
                     .gap_1()
                     .child(text(note).text_size(px(14.0)).text_color(hexa(0xece6ff, 0.85)))
-                    .children(habits.into_iter().take(4).map(|h| text(h).text_size(px(13.0)).line_height(px(18.0)).text_color(hex(0xffd76b))))
+                    .children(habits.into_iter().take(4).map(|h| {
+                        text(h)
+                            .text_size(px(13.0))
+                            .line_height(px(18.0))
+                            .text_color(hex(0xffd76b))
+                    }))
             })
         }))
         .child(view().flex_1())
@@ -213,14 +291,24 @@ pub(crate) fn replay_screen(ui: Ui) -> impl IntoElement {
                 .items_center()
                 .gap_2()
                 .child(chip("Space", 0xfff3b0))
-                .child(text(move || {
-                    ui.tick.get();
-                    if replay_value(|r| r.playing).unwrap_or(false) { "pause" } else { "play" }
-                })
-                .text_color(hexa(0xffffff, 0.6))
-                .mr(px(10.0)))
+                .child(
+                    text(move || {
+                        ui.tick.get();
+                        if replay_value(|r| r.playing).unwrap_or(false) {
+                            "pause"
+                        } else {
+                            "play"
+                        }
+                    })
+                    .text_color(hexa(0xffffff, 0.6))
+                    .mr(px(10.0)),
+                )
                 .child(chip("h l", 0xfff3b0))
-                .child(text("step back / forward").text_color(hexa(0xffffff, 0.6)).mr(px(10.0)))
+                .child(
+                    text("step back / forward")
+                        .text_color(hexa(0xffffff, 0.6))
+                        .mr(px(10.0)),
+                )
                 .child(chip("0 $", 0xfff3b0))
                 .child(text("start / end").text_color(hexa(0xffffff, 0.6)).mr(px(10.0)))
                 .child(chip("q", 0xfff3b0))

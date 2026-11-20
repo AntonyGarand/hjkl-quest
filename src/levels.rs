@@ -53,8 +53,16 @@ impl Level {
 
     /// Sentries: `V` marching down, `A` up.
     pub fn sentries(&self) -> Vec<crate::game::Sentry> {
-        let down = self.marked('V').into_iter().map(|at| crate::game::Sentry { at, dir: 1 });
-        down.chain(self.marked('A').into_iter().map(|at| crate::game::Sentry { at, dir: -1 })).collect()
+        let down = self
+            .marked('V')
+            .into_iter()
+            .map(|at| crate::game::Sentry { at, dir: 1 });
+        down.chain(
+            self.marked('A')
+                .into_iter()
+                .map(|at| crate::game::Sentry { at, dir: -1 }),
+        )
+        .collect()
     }
 
     /// Frozen lines: a `#` anywhere in a row of the marks.
@@ -75,14 +83,27 @@ impl Level {
 
     /// Typo bugs: `>` crawling right, `<` left.
     pub fn bugs(&self) -> Vec<crate::game::Bug> {
-        let right = self.marked('>').into_iter().map(|at| crate::game::Bug { at, dir: 1 });
-        right.chain(self.marked('<').into_iter().map(|at| crate::game::Bug { at, dir: -1 })).collect()
+        let right = self
+            .marked('>')
+            .into_iter()
+            .map(|at| crate::game::Bug { at, dir: 1 });
+        right
+            .chain(
+                self.marked('<')
+                    .into_iter()
+                    .map(|at| crate::game::Bug { at, dir: -1 }),
+            )
+            .collect()
     }
 
     /// The scrolls on the isle's shelf, for `:r`, `:!ls` and Tab.
     pub fn files(&self) -> &'static [(&'static str, &'static str)] {
         match self.title {
-            "Scrolls" => &[("ingredients.txt", "flour\neggs\nmilk"), ("notes.txt", "Pancakes: mix, rest, fry."), ("weather.txt", "sunny")],
+            "Scrolls" => &[
+                ("ingredients.txt", "flour\neggs\nmilk"),
+                ("notes.txt", "Pancakes: mix, rest, fry."),
+                ("weather.txt", "sunny"),
+            ],
             "Copy Desk" => &[("old.txt", "nothing new")],
             "Two Scrolls" => &[("recipe.txt", "flour\nsugar"), ("notes.txt", "bake at 180")],
             _ => &[],
@@ -139,7 +160,10 @@ impl Level {
 pub const ENDING: &str = "The Grand Refactor";
 
 pub fn ex_isle() -> usize {
-    LEVELS.iter().position(|l| l.unlock.contains(':')).map_or(0, |i| i + 1)
+    LEVELS
+        .iter()
+        .position(|l| l.unlock.contains(':'))
+        .map_or(0, |i| i + 1)
 }
 
 /// The keys learned by isle `index`: those its isle and the ones before
@@ -168,7 +192,10 @@ pub static LEVELS: &[Level] = &[
             ("j", "step down"),
             ("k", "step up"),
             ("l", "step right"),
-            (":q!  :wq", "in vim, quit without saving, or save and quit; here both go back to the map"),
+            (
+                ":q!  :wq",
+                "in vim, quit without saving, or save and quit; here both go back to the map",
+            ),
             (":h  :help", "vim's manual; here, this isle's lessons again"),
         ],
         unlock: "hjkl",
@@ -196,7 +223,10 @@ pub static LEVELS: &[Level] = &[
         teaches: &[
             ("{n}l", "a count repeats a motion: 5l moves five right"),
             ("3j", "three lines down"),
-            ("traps", "spiked blocks: you can never land on one, but a count jumps clean over"),
+            (
+                "traps",
+                "spiked blocks: you can never land on one, but a count jumps clean over",
+            ),
         ],
         unlock: "123456789",
         map: "
@@ -363,7 +393,10 @@ watch them crawl and time your jumps",
         title: "Paragraph Isles",
         story: "Small isles float apart, joined by empty planks. Leap from one blank line \
                 to the next.",
-        teaches: &[("}", "forward to the next blank line"), ("{", "back to the previous blank line")],
+        teaches: &[
+            ("}", "forward to the next blank line"),
+            ("{", "back to the previous blank line"),
+        ],
         unlock: "{}",
         map: "
 the first isle
@@ -445,7 +478,10 @@ rock rock sand gold",
         story: "The machine keeps a log of every leap you make. Search backward for what's \
                 behind you, then retrace your jumps without counting lines.",
         teaches: &[
-            ("?text⏎", "search backward (n keeps going backward, N turns around)"),
+            (
+                "?text⏎",
+                "search backward (n keeps going backward, N turns around)",
+            ),
             ("Ctrl-o", "jump back to where you were before the last jump"),
             ("Ctrl-i  Tab", "jump forward again"),
             ("Ctrl-g", "show where you are: line, total lines, column"),
@@ -501,7 +537,10 @@ and the bug in the printer",
             ("x", "delete the character under the cursor"),
             ("X", "delete the character before the cursor"),
             ("r{c}", "replace the character under the cursor with c"),
-            ("u  Ctrl-r", "undo a mistake, redo it (always available from here on)"),
+            (
+                "u  Ctrl-r",
+                "undo a mistake, redo it (always available from here on)",
+            ),
             ("U", "undo every change on the last changed line at once"),
             ("~", "toggle the case of the character, and step right"),
         ],
@@ -509,8 +548,10 @@ and the bug in the printer",
         map: "
 thee cat zat onn thee mat",
         marks: "@",
-        goal: Some("
-The cat sat on the mat"),
+        goal: Some(
+            "
+The cat sat on the mat",
+        ),
         solution: "~lxfzrsfnxfex",
         tip: "Glowing tiles don't match the goal yet. Fix them all to finish.",
     },
@@ -533,11 +574,13 @@ keep this too
 cut here: and all of this
 very very good",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 keep this line
 keep this too
 cut here:
-very good"),
+very good",
+        ),
         solution: "jddjf:lDjbdw",
         tip: "Operators + motions form a language: d (delete) w (word). Learn both and combine them.",
     },
@@ -557,9 +600,11 @@ very good"),
 I hate vim and I hate bugs
 status: broken forever",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 I love vim and I squash bugs
-status: fixed"),
+status: fixed",
+        ),
         solution: "wcwlove<Esc>4wcwsquash<Esc>j2BCfixed<Esc>",
         tip: "cw acts like ce: it keeps the space after the word.",
     },
@@ -579,11 +624,13 @@ list
 - apple
 - pear",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 my list:
 - apple
 - ripe pear!
-- fig"),
+- fig",
+        ),
         solution: "Imy <Esc>A:<Esc>jjA!<Esc>biripe <Esc>o- fig<Esc>",
         tip: "A and o save keystrokes because they move and enter insert mode in one key.",
     },
@@ -601,11 +648,13 @@ my list:
 hip hooray
 ==",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 hip hip hooray
 ==
 ==
-=="),
+==",
+        ),
         solution: "ywPjyy2p",
         tip: "Deleting also yanks: ddp swaps two lines and xp swaps two characters.",
     },
@@ -625,11 +674,13 @@ y = 2
 z = 3
 bad bad bad good",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 x = 1;
 y = 2;
 z = 3;
-good"),
+good",
+        ),
         solution: "A;<Esc>j.j.j0d3w",
         tip: "Make each change a single repeatable action, then press . wherever it's needed.",
     },
@@ -649,10 +700,12 @@ print(\"hello world\")
 items = [1, 2, 3, 4]
 call(a, b(c), d)",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 print(\"bye\")
 items = []
-call()"),
+call()",
+        ),
         solution: "ci\"bye<Esc>jdi[jF(di(",
         tip: "i means inner (only the contents) and a means around (including the brackets or quotes).",
     },
@@ -675,10 +728,12 @@ drop
 drop
 keep",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 SHOUT THIS out
 keep
-keep"),
+keep",
+        ),
         solution: "veeU2jVjd",
         tip: "In visual mode, o jumps to the other end of the selection.",
     },
@@ -698,10 +753,12 @@ foo is foo
 the foo bar
 no foo here",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 baz is baz
 the baz bar
-no baz here"),
+no baz here",
+        ),
         solution: ":%s/foo/baz/g<CR>",
         tip: "% means every line, and g means every match on the line.",
     },
@@ -713,7 +770,10 @@ no baz here"),
         teaches: &[
             (":set ic  :set noic", "searches (and :s) ignore case, or not"),
             ("\\c", "in a pattern: ignore case for this search only"),
-            (":set hls  :set is", "highlight every match; show matches while typing"),
+            (
+                ":set hls  :set is",
+                "highlight every match; show matches while typing",
+            ),
             (":noh", "turn the highlight off until the next search"),
         ],
         unlock: "",
@@ -721,9 +781,11 @@ no baz here"),
 Gold, GOLD and gold
 gold is GoLd",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 lead, lead and lead
-lead is lead"),
+lead is lead",
+        ),
         solution: ":%s/gold\\c/lead/g<CR>",
         tip: "With :set ic smartcase, a capital in the pattern makes it exact again.",
     },
@@ -734,7 +796,10 @@ lead is lead"),
         teaches: &[
             (":%s/a/b/gc", "substitute, confirming each match"),
             ("y  n", "replace this one, or skip it"),
-            ("a  q  l", "replace all the rest, quit, or replace this one and stop"),
+            (
+                "a  q  l",
+                "replace all the rest, quit, or replace this one and stop",
+            ),
         ],
         unlock: "",
         map: "
@@ -742,10 +807,12 @@ cat food for the cat
 the catalog of cats
 my cat sat",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 dog food for the dog
 the catalog of dogs
-my dog sat"),
+my dog sat",
+        ),
         solution: ":%s/cat/dog/gc<CR>yynyy",
         tip: "The match being asked about is highlighted. Esc stops, keeping what you changed.",
     },
@@ -762,11 +829,13 @@ fn compute(x: i32) -> i32 {
     reslt + 1
 }",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 fn double(x: i64) -> i64 {
     let result = x * 2;
     result
-}"),
+}",
+        ),
         solution: "wcwdouble<Esc>:%s/32/64/g<CR>:%s/sl/sul/g<CR>f D",
         tip: "Real vim golf: the shortest known answer often uses a clever substitute.",
     },
@@ -778,19 +847,27 @@ fn double(x: i64) -> i64 {
                 peek at the shelf with the shell, and let Tab finish the names for you.",
         teaches: &[
             (":r FILE", "insert a file's text below the cursor"),
-            (":!ls  :!cat FILE", "run a shell command (here: ls, cat, echo, pwd, date)"),
-            ("Tab  Ctrl-d", "on the : line, complete a command or file name; list the choices"),
+            (
+                ":!ls  :!cat FILE",
+                "run a shell command (here: ls, cat, echo, pwd, date)",
+            ),
+            (
+                "Tab  Ctrl-d",
+                "on the : line, complete a command or file name; list the choices",
+            ),
             (":help", "vim's manual (here, :h shows these lessons again)"),
         ],
         unlock: "",
         map: "
 # pancakes",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 # pancakes
 flour
 eggs
-milk"),
+milk",
+        ),
         solution: ":r i<Tab><CR>",
         tip: "Tab completes command names too: :so<Tab> gives :sort. In vim, :help and your ~/.vimrc are next.",
     },
@@ -801,7 +878,10 @@ milk"),
                 a file name, and a range, to write just part of the text.",
         teaches: &[
             (":w FILE", "write the text to a file"),
-            ("v  :w FILE", "select, then : gives :'<,'>w FILE: write just the selection"),
+            (
+                "v  :w FILE",
+                "select, then : gives :'<,'>w FILE: write just the selection",
+            ),
             (":r !ls", "insert a shell command's output"),
         ],
         unlock: "",
@@ -811,9 +891,11 @@ buy milk
 call mom
 spam spam",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 # inbox
-spam spam"),
+spam spam",
+        ),
         solution: "jVj:w keep.txt<CR>dk",
         tip: "The goal also wants keep.txt to hold the two errands. :!cat keep.txt shows what's in it.",
     },
@@ -823,7 +905,10 @@ spam spam"),
         story: "Each list needs a line from the other. Open the recipe, trade lines, write it, \
                 and come back: :e opens another file, and :e # returns to the one before.",
         teaches: &[
-            (":e FILE", "edit another file (your text stays open, as with 'hidden')"),
+            (
+                ":e FILE",
+                "edit another file (your text stays open, as with 'hidden')",
+            ),
             (":e #", "back to the file you were in before"),
             (":w", "write the file you're editing"),
         ],
@@ -832,10 +917,12 @@ spam spam"),
 # shopping
 eggs",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 # shopping
 eggs
-sugar"),
+sugar",
+        ),
         solution: "jyy:e r<Tab><CR>jpkyy:w<CR>:e #<CR>p",
         tip: "The isle's own text is isle.txt: end there, with recipe.txt written.",
     },
@@ -845,7 +932,10 @@ sugar"),
         story: "Below the summit lie the vaults: twenty-six named registers, a hand for \
                 every letter. Carry two things at once without one pushing out the other.",
         teaches: &[
-            ("\"a  \"b", "name a register before a yank, delete or put: \"add, \"ap"),
+            (
+                "\"a  \"b",
+                "name a register before a yank, delete or put: \"add, \"ap",
+            ),
             ("\"0", "the last yank, untouched by later deletes"),
             ("\"_", "the black hole: delete without losing what you yanked"),
             ("\"A", "an upper-case name appends to the register"),
@@ -858,11 +948,13 @@ crate
 vault A:
 vault B:",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 vault A:
 lamp
 vault B:
-crate"),
+crate",
+        ),
         solution: "\"add\"bdd\"apj\"bp",
         tip: "Registers shine when you carry several things at once. Here plain dd and p can beat par: can you find how?",
     },
@@ -887,10 +979,12 @@ away completely
 until THERE the rest
 the end",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 keep this line
 cut from the rest
-the end"),
+the end",
+        ),
         solution: "jfHma/the r<CR>d`a",
         tip: "Search, G and % are jumps: `` brings you back. A visual selection can also do this one, a little shorter.",
     },
@@ -911,11 +1005,13 @@ pears: 10
 debt: -4
 year 1999",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 apples: 5
 pears: 1
 debt: 0
-year 2026"),
+year 2026",
+        ),
         solution: "2<C-a>j9<C-x>j4<C-a>j27<C-a>",
         tip: "Ctrl-a finds the next number on the line by itself: no need to move onto it first.",
     },
@@ -938,13 +1034,15 @@ dave
 erin
 frank",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 \"Alice\",
 \"Bob\",
 \"Carol\",
 \"Dave\",
 \"Erin\",
-\"Frank\","),
+\"Frank\",",
+        ),
         solution: "qaI\"<Esc>l~A\",<Esc>jq5@a",
         tip: "End a macro on the next line (j) so it can run again. If a motion fails, the macro stops, so 99@a is safe.",
     },
@@ -953,18 +1051,23 @@ frank",
         title: "Assembly Line",
         story: "The recipe needs numbered steps. A macro that copies a line and winds its number \
                 builds the whole list.",
-        teaches: &[("qayyp Ctrl-a q", "a macro that copies and counts"), ("4@a", "four more")],
+        teaches: &[
+            ("qayyp Ctrl-a q", "a macro that copies and counts"),
+            ("4@a", "four more"),
+        ],
         unlock: "",
         map: "
 step 1: stir",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 step 1: stir
 step 2: stir
 step 3: stir
 step 4: stir
 step 5: stir
-step 6: stir"),
+step 6: stir",
+        ),
         solution: "qayyp<C-a>q4@a",
         tip: "Recording also runs the keys, so the first copy is made while you record.",
     },
@@ -986,12 +1089,14 @@ if x:
 keep(x)
 return xs",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 def tidy(xs):
     for x in xs:
         if x:
             keep(x)
-    return xs"),
+    return xs",
+        ),
         solution: "j>Gj>jj>>",
         tip: "Indent the outer block first, then the inner ones: each shift adds to the last.",
     },
@@ -1012,10 +1117,12 @@ const max_size = 10
 WARNING: Do Not Touch
 hello",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 const MAX_SIZE = 10
 warning: do not touch
-HELLO"),
+HELLO",
+        ),
         solution: "wgUiwjguujgUU",
         tip: "iw takes the underscore with it: max_size is one word.",
     },
@@ -1024,15 +1131,20 @@ HELLO"),
         title: "Overwrite",
         story: "The hero board has fixed columns. Replace mode types over the old text instead of \
                 pushing it right, so the columns stay lined up.",
-        teaches: &[("R", "replace mode: every key overwrites a character"), ("<BS>", "in replace mode, brings the old character back")],
+        teaches: &[
+            ("R", "replace mode: every key overwrites a character"),
+            ("<BS>", "in replace mode, brings the old character back"),
+        ],
         unlock: "R",
         map: "
 | name     | hp |
 | ???????? | 00 |",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 | name     | hp |
-| wisp     | 42 |"),
+| wisp     | 42 |",
+        ),
         solution: "jf?Rwisp    <Esc>f0R42<Esc>",
         tip: "R is ideal for tables and fixed-width data, where c would shift everything after it.",
     },
@@ -1043,7 +1155,10 @@ HELLO"),
                 and what you type on its first line appears on all of them.",
         teaches: &[
             ("Ctrl-v", "visual block mode: select a column"),
-            ("I  A", "in a block: insert before it, or append after it, on every line"),
+            (
+                "I  A",
+                "in a block: insert before it, or append after it, on every line",
+            ),
             ("$A", "append at the end of every line, however long"),
             ("c  d", "change, or delete, the block"),
         ],
@@ -1053,10 +1168,12 @@ HELLO"),
 # green = 2
 # blue = 3",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 let red = 1;
 let green = 2;
-let blue = 3;"),
+let blue = 3;",
+        ),
         solution: "<C-v>jjlclet <Esc><C-v>jj$A;<Esc>",
         tip: "The other lines are filled in when you press <Esc>, not while you type.",
     },
@@ -1076,10 +1193,12 @@ let tmp = load();
 print(tmp);
 save(tmp, tmpdir);",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 let data = load();
 print(data);
-save(data, tmpdir);"),
+save(data, tmpdir);",
+        ),
         solution: "w*cgndata<Esc>..",
         tip: "cgn with . is like a find-and-replace you confirm one match at a time, skipping any with n.",
     },
@@ -1102,11 +1221,13 @@ save(data, tmpdir);"),
 junk line
 more junk",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 <ul>
   <li>new</li>
   <li></li>
-</ul>"),
+</ul>",
+        ),
         solution: "jwcitnew<Esc>jdatGdap",
         tip: "it picks the innermost tag around the cursor; dap at the last paragraph takes the blank lines before it.",
     },
@@ -1118,7 +1239,10 @@ more junk",
         teaches: &[
             ("*", "search for the word under the cursor, whole words only"),
             ("ciw  n  .", "change one, find the next, repeat the change"),
-            (":%s/\\<x\\>/size/g", "or all at once, \\< and \\> keeping it to whole words"),
+            (
+                ":%s/\\<x\\>/size/g",
+                "or all at once, \\< and \\> keeping it to whole words",
+            ),
         ],
         unlock: "",
         map: "
@@ -1130,12 +1254,14 @@ fn area(w: f64, h: f64) -> f64 {
         marks: "
 .
 ........@",
-        goal: Some("
+        goal: Some(
+            "
 fn area(w: f64, h: f64) -> f64 {
     let size = w * h;
     println!(\"{}\", size);
     size
-}"),
+}",
+        ),
         solution: "*ciwsize<Esc>n.n.",
         tip: "* jumps to the next x first; it wraps around to the one you started on.",
     },
@@ -1159,12 +1285,14 @@ fn area(w: f64, h: f64) -> f64 {
 }",
         marks: "
 @",
-        goal: Some("
+        goal: Some(
+            "
 {
   \"name\": \"hjkl\",
   \"port\": 8080,
   \"debug\": false
-}"),
+}",
+        ),
         solution: "jf'r\";r\"j$hr8A,<Esc>jciwfalse<Esc>lx",
         tip: "JSON wants double quotes, a comma between entries, and none after the last.",
     },
@@ -1189,14 +1317,16 @@ fn area(w: f64, h: f64) -> f64 {
 - fixed bugs",
         marks: "
 @",
-        goal: Some("
+        goal: Some(
+            "
 # Changelog
 ## 1.2
 - faster maps
 ## 1.1
 - fixed bugs
 ## 1.0
-- first release"),
+- first release",
+        ),
         solution: "j2ddGp",
         tip: "Linewise text (from dd or yy) is always put on whole lines, below the cursor's.",
     },
@@ -1221,13 +1351,15 @@ use crate::audio;
 fn main() {}",
         marks: "
 @",
-        goal: Some("
+        goal: Some(
+            "
 use crate::audio;
 use crate::game;
 use std::fs;
 use std::io;
 
-fn main() {}"),
+fn main() {}",
+        ),
         solution: ":1,5sor u<CR>",
         tip: ":sort sorts the whole file without a range: here that would move fn main() too.",
     },
@@ -1252,12 +1384,14 @@ fn main() {}"),
 3 cherry
 # end",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 1 apple
 2 banana
 3 cherry
 4 date
-5 elder"),
+5 elder",
+        ),
         solution: ":g/#/d<CR>:sort<CR>",
         tip: "Patterns may start with ^ or end with $ to anchor them: :g/^#/d.",
     },
@@ -1269,7 +1403,10 @@ fn main() {}"),
         teaches: &[
             (":4,6m0", "move lines 4 to 6 to the top (after line 0)"),
             (":$t0", "copy the last line to the top"),
-            (":'<,'>", "the lines of the visual selection (press : in visual mode)"),
+            (
+                ":'<,'>",
+                "the lines of the visual selection (press : in visual mode)",
+            ),
             (". $ +1 'a", "addresses: this line, the last, offsets, marks"),
         ],
         unlock: "",
@@ -1283,7 +1420,8 @@ build it
 ## License
 MIT",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 MIT
 ## Install
 get it
@@ -1292,7 +1430,8 @@ build it
 run it
 run it fast
 ## License
-MIT"),
+MIT",
+        ),
         solution: ":4,6m0<CR>:$t0<CR>",
         tip: "The line numbers on the left are what ranges count with. :m moves, :t copies (:co too).",
     },
@@ -1323,7 +1462,8 @@ fn save() {}
 // h
 fn quit() {}",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 fn LOAD() {}
 // a
 // b
@@ -1337,7 +1477,8 @@ fn PRINT() {}
 // g
 fn SAVE() {}
 // h
-fn QUIT() {}"),
+fn QUIT() {}",
+        ),
         solution: ":g/fn/norm wgUiw<CR>",
         tip: ":normal starts each line at its first column and ends insert mode for you.",
     },
@@ -1358,10 +1499,12 @@ trace=true
 // end
 mode=fast",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 const NAME = \"hjkl\";
 const SIZE = \"10\";
-const MODE = \"fast\";"),
+const MODE = \"fast\";",
+        ),
         solution: ":g#//#d<CR>:g/=t/d<CR>ggqaIconst <Esc>wgUiwf=s = \"<Esc>A\";<Esc>jq2@a",
         tip: "Any punctuation can delimit a pattern: :g#//#d saves escaping the slashes.",
     },
@@ -1393,7 +1536,10 @@ jump with counts and never take a step",
         story: "Lantern-bearing sentries march the reef, one row for every command you finish. \
                 Land where one stands, or where one is going, and it marches you back to the start.",
         teaches: &[
-            ("count the beats", "every finished command is one step for every sentry"),
+            (
+                "count the beats",
+                "every finished command is one step for every sentry",
+            ),
             ("wait a beat", "a short move buys time when the way is guarded"),
         ],
         unlock: "",
@@ -1448,11 +1594,13 @@ Hopper, Grace
 Torvalds, Linus
 Moolenaar, Bram",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 Ada Lovelace
 Grace Hopper
 Linus Torvalds
-Bram Moolenaar"),
+Bram Moolenaar",
+        ),
         solution: ":%s/\\v(.*), (.*)/\\2 \\1<CR>",
         tip: ".* is greedy, but the comma pins it: everything before \", \", then everything after.",
     },
@@ -1473,12 +1621,14 @@ plums
 figs
 dates",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 1. apples
 2. pears
 3. plums
 4. figs
-5. dates"),
+5. dates",
+        ),
         solution: "qa0y3lj0P0<C-a>q3@a",
         tip: "y3l yanks \"1. \"; after P puts it in front, Ctrl-a turns the 1 into a 2.",
     },
@@ -1490,7 +1640,10 @@ dates",
         teaches: &[
             ("[bi]  \\=", "one of b or i; an optional /"),
             (":2,4>", "shift a range of lines"),
-            ("vatp", "or with a tag object: select the tag, put the word over it"),
+            (
+                "vatp",
+                "or with a tag object: select the tag, put the word over it",
+            ),
         ],
         unlock: "",
         map: "
@@ -1500,12 +1653,14 @@ dates",
 <li>eggs</li>
 </ul>",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 <ul>
     <li>bread</li>
     <li>milk</li>
     <li>eggs</li>
-</ul>"),
+</ul>",
+        ),
         solution: ":%s/<\\/\\=[bi]>//g<CR>:2,4><CR>",
         tip: "\\= makes the / optional, so one pattern takes both <b> and </b>.",
     },
@@ -1553,12 +1708,14 @@ teh ice holds: this line is frozen",
 #
 .
 #",
-        goal: Some("
+        goal: Some(
+            "
 teh ice holds: this line is frozen
 fix the typo on this line
 teh ice holds: this line is frozen
 and the one on this line
-teh ice holds: this line is frozen"),
+teh ice holds: this line is frozen",
+        ),
         solution: ":v/ice/s/teh/the<CR>",
         tip: ":%s would change the frozen lines too, so the ice stops it whole.",
     },
@@ -1576,9 +1733,11 @@ teh ice holds: this line is frozen"),
 the the cat sat on on the mat
 a a dog dug up up a bone",
         marks: "@",
-        goal: Some("
+        goal: Some(
+            "
 the cat sat on the mat
-a dog dug up a bone"),
+a dog dug up a bone",
+        ),
         solution: ":%s/\\v<(\\w+) \\1>/\\1/g<CR>",
         tip: "\\1 in the pattern is whatever the first group matched: a doubled word.",
     },

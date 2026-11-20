@@ -42,7 +42,11 @@ pub fn lcs<T: PartialEq>(a: &[T], b: &[T], late: bool) -> Vec<(usize, usize)> {
     let mut dp = vec![vec![0u16; m + 1]; n + 1];
     for i in (0..n).rev() {
         for j in (0..m).rev() {
-            dp[i][j] = if a[i] == b[j] { dp[i + 1][j + 1] + 1 } else { dp[i + 1][j].max(dp[i][j + 1]) };
+            dp[i][j] = if a[i] == b[j] {
+                dp[i + 1][j + 1] + 1
+            } else {
+                dp[i + 1][j].max(dp[i][j + 1])
+            };
         }
     }
     let (mut i, mut j, mut out) = (0, 0, Vec::new());
@@ -94,7 +98,10 @@ pub fn diff(buf: &[Vec<char>], goal: &[Vec<char>]) -> Diff {
                 run.push(c);
                 let ends = j + 1 == goal[g].len() || d.present[g][j + 1];
                 if ends {
-                    let col = same.iter().find(|&&(_, mj)| mj > j).map_or(buf[b].len(), |&(i, _)| i);
+                    let col = same
+                        .iter()
+                        .find(|&&(_, mj)| mj > j)
+                        .map_or(buf[b].len(), |&(i, _)| i);
                     d.inserts.push((pos(b, col), std::mem::take(&mut run)));
                 }
             }
@@ -123,7 +130,14 @@ mod tests {
     #[test]
     fn missing_text_inside_a_line() {
         let d = diff(&lines("list\n- pear"), &lines("my list:\n- ripe pear"));
-        assert_eq!(d.inserts, vec![(pos(0, 0), "my ".into()), (pos(0, 4), ":".into()), (pos(1, 1), " ripe".into())]);
+        assert_eq!(
+            d.inserts,
+            vec![
+                (pos(0, 0), "my ".into()),
+                (pos(0, 4), ":".into()),
+                (pos(1, 1), " ripe".into())
+            ]
+        );
         assert_eq!(d.wrong_count(), 0);
         assert_eq!(d.missing_count(), 9);
     }

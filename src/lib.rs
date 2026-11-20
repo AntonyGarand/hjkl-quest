@@ -6,18 +6,20 @@
 //! Native Shell.
 
 pub mod audio;
+#[cfg(test)]
+mod code_size;
 pub mod coach;
 pub mod daily;
 pub mod diff;
 pub mod examples;
-mod intro;
 pub mod game;
 pub mod grammar;
 pub mod hints;
+mod intro;
 pub mod lessons;
 pub mod levels;
-mod replay;
 pub mod regex;
+mod replay;
 pub mod review;
 mod screens;
 pub mod story;
@@ -28,11 +30,10 @@ use std::cell::RefCell;
 use std::f32::consts::TAU;
 use std::rc::Rc;
 
-
-use nsh_core::element::CanvasArg;
 use nsh_core::canvas::{CanvasGradient, CanvasTextAlign, CanvasTextBaseline, LineCap};
-use nsh_core::storage::Storage;
+use nsh_core::element::CanvasArg;
 use nsh_core::prelude::*;
+use nsh_core::storage::Storage;
 
 use audio::Sfx;
 use game::{Event, Session};
@@ -126,10 +127,14 @@ fn mode_color(e: &vim::Editor) -> u32 {
 // ------------------------------------------------------------------- state
 
 enum Screen {
-    Menu { selected: usize },
+    Menu {
+        selected: usize,
+    },
     Play(Box<Session>),
     /// The verb × noun grid, from the map.
-    Grammar { selected: usize },
+    Grammar {
+        selected: usize,
+    },
     /// A finished run played back beside the golf solution.
     Replay(Box<replay::Replay>),
 }
@@ -213,7 +218,14 @@ impl State {
         self.intro = false;
         if let Screen::Play(s) = &self.screen {
             self.seen[s.index] = true;
-            save_entries("hjkl-quest.seen-isles", self.seen.iter().enumerate().filter(|(_, s)| **s).map(|(i, _)| (i, "1".to_string())));
+            save_entries(
+                "hjkl-quest.seen-isles",
+                self.seen
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, s)| **s)
+                    .map(|(i, _)| (i, "1".to_string())),
+            );
         }
     }
 }
@@ -233,7 +245,7 @@ thread_local! {
         toast: String::new(),
         intro: false,
         seen: load_seen(),
-        grammar: Storage::get_item("hjkl-quest.grammar").map(|g| g.split('|').filter(|p| !p.is_empty()).map(String::from).collect()).unwrap_or_default(),
+        grammar: Storage::get_item("hjkl-quest.grammar").map_or_default(|g| g.split('|').filter(|p| !p.is_empty()).map(String::from).collect()),
         times: load_numbers("hjkl-quest.times").into_iter().map(|t| t.map(|t| t as u32)).collect(),
         free_best: load_numbers("hjkl-quest.free").into_iter().map(|t| t.map(|t| t as u32)).collect(),
         practiced: load_numbers("hjkl-quest.practiced").into_iter().map(|t| t.unwrap_or(0) as u32).collect(),
@@ -263,7 +275,12 @@ fn load_numbers(key: &str) -> Vec<Option<usize>> {
 }
 
 fn save_numbers(key: &str, values: impl Iterator<Item = Option<u32>>) {
-    save_entries(key, values.enumerate().filter_map(|(i, v)| v.map(|v| (i, v.to_string()))));
+    save_entries(
+        key,
+        values
+            .enumerate()
+            .filter_map(|(i, v)| v.map(|v| (i, v.to_string()))),
+    );
 }
 
 /// What's left to do on an isle: crystals, bugs, characters to fix.
@@ -278,7 +295,7 @@ fn is_boss(s: &Session) -> bool {
 
 /// The first isle not yet cleared: the ones after the next are in fog.
 fn frontier(best: &[Option<usize>]) -> usize {
-    best.iter().position(|b| b.is_none()).unwrap_or(best.len())
+    best.iter().position(Option::is_none).unwrap_or(best.len())
 }
 
 /// "1:05.3" from milliseconds.
@@ -297,7 +314,7 @@ thread_local! {
 }
 
 fn theme() -> story::Theme {
-    THEME.with(|t| t.get())
+    THEME.with(std::cell::Cell::get)
 }
 
 /// Takes the look of the chapter on screen (the map's selected isle, or
@@ -309,7 +326,10 @@ fn sync_theme(ui: Ui) {
         Screen::Menu { selected } | Screen::Grammar { selected } => LEVELS[*selected].chapter,
     });
     THEME.with(|t| t.set(story::theme(label)));
-    let index = story::CHAPTERS.iter().position(|c| story::chapter(label).is_some_and(|k| std::ptr::eq(k, c))).unwrap_or(0);
+    let index = story::CHAPTERS
+        .iter()
+        .position(|c| story::chapter(label).is_some_and(|k| std::ptr::eq(k, c)))
+        .unwrap_or(0);
     if ui.chapter.get_untracked() != index {
         ui.chapter.set(index);
     }
@@ -318,10 +338,13 @@ fn sync_theme(ui: Ui) {
 /// The menu, or with `HJKL_LEVEL=<n>` (desktop, for development) level n.
 fn start_screen() -> Screen {
     #[cfg(not(target_arch = "wasm32"))]
-    if let Some(n) = std::env::var("HJKL_LEVEL").ok().and_then(|v| v.parse::<usize>().ok())
-        && (1..=LEVELS.len()).contains(&n) {
-            return Screen::Play(Box::new(Session::new(n - 1)));
-        }
+    if let Some(n) = std::env::var("HJKL_LEVEL")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        && (1..=LEVELS.len()).contains(&n)
+    {
+        return Screen::Play(Box::new(Session::new(n - 1)));
+    }
     Screen::Menu { selected: 0 }
 }
 
@@ -332,12 +355,41 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 /// The isles in the order the first saves used, when progress was kept by
 /// position: isles added since then would shift it, so it is now kept by title.
 const OLD_ORDER: &[&str] = &[
-    "First Steps", "Counting Sheep", "Word Hopping", "Punctuation Pass", "Edge of the World", "Long Jumps",
-    "Seek and Find", "Paragraph Isles", "Mirror Matching", "Search Party", "Chomp", "Demolition",
-    "Change of Heart", "Insert Coin", "Copycat", "Time Travel", "Inside Out", "Highlights", "Ex Marks the Spot",
-    "The Refactor", "Named Vaults", "Waymarks", "Tally Marks", "Wind-up Golem", "Assembly Line", "Terraces",
-    "Shouting Match", "Overwrite", "Ice Columns", "Next Match", "Tag, You're It", "Global Decree", "Moving Day",
-    "Normal Order", "The Grand Refactor",
+    "First Steps",
+    "Counting Sheep",
+    "Word Hopping",
+    "Punctuation Pass",
+    "Edge of the World",
+    "Long Jumps",
+    "Seek and Find",
+    "Paragraph Isles",
+    "Mirror Matching",
+    "Search Party",
+    "Chomp",
+    "Demolition",
+    "Change of Heart",
+    "Insert Coin",
+    "Copycat",
+    "Time Travel",
+    "Inside Out",
+    "Highlights",
+    "Ex Marks the Spot",
+    "The Refactor",
+    "Named Vaults",
+    "Waymarks",
+    "Tally Marks",
+    "Wind-up Golem",
+    "Assembly Line",
+    "Terraces",
+    "Shouting Match",
+    "Overwrite",
+    "Ice Columns",
+    "Next Match",
+    "Tag, You're It",
+    "Global Decree",
+    "Moving Day",
+    "Normal Order",
+    "The Grand Refactor",
 ];
 
 fn index_of(title: &str) -> Option<usize> {
@@ -347,13 +399,23 @@ fn index_of(title: &str) -> Option<usize> {
 /// Saved `title=value` pairs, or (from older saves) `index:value` pairs.
 fn load_entries(key: &str, old_key: &str, old_sep: char) -> Vec<(usize, String)> {
     if let Some(saved) = Storage::get_item(key) {
-        return saved.split('|').filter_map(|e| e.split_once('=')).filter_map(|(t, v)| Some((index_of(t)?, v.to_string()))).collect();
+        return saved
+            .split('|')
+            .filter_map(|e| e.split_once('='))
+            .filter_map(|(t, v)| Some((index_of(t)?, v.to_string())))
+            .collect();
     }
-    let Some(saved) = Storage::get_item(old_key) else { return Vec::new() };
+    let Some(saved) = Storage::get_item(old_key) else {
+        return Vec::new();
+    };
     saved
         .split(',')
         .filter_map(|e| {
-            let (i, v) = if old_sep == ':' { e.split_once(':')? } else { (e, "1") };
+            let (i, v) = if old_sep == ':' {
+                e.split_once(':')?
+            } else {
+                (e, "1")
+            };
             let title = OLD_ORDER.get(i.parse::<usize>().ok()?)?;
             Some((index_of(title)?, v.to_string()))
         })
@@ -361,7 +423,10 @@ fn load_entries(key: &str, old_key: &str, old_sep: char) -> Vec<(usize, String)>
 }
 
 fn save_entries(key: &str, entries: impl Iterator<Item = (usize, String)>) {
-    let text = entries.map(|(i, v)| format!("{}={v}", LEVELS[i].title)).collect::<Vec<_>>().join("|");
+    let text = entries
+        .map(|(i, v)| format!("{}={v}", LEVELS[i].title))
+        .collect::<Vec<_>>()
+        .join("|");
     let _ = Storage::set_item(key, text);
 }
 
@@ -374,7 +439,12 @@ fn load_progress() -> Vec<Option<usize>> {
 }
 
 fn save_progress(best: &[Option<usize>]) {
-    save_entries("hjkl-quest.progress", best.iter().enumerate().filter_map(|(i, b)| b.map(|n| (i, n.to_string()))));
+    save_entries(
+        "hjkl-quest.progress",
+        best.iter()
+            .enumerate()
+            .filter_map(|(i, b)| b.map(|n| (i, n.to_string()))),
+    );
 }
 
 /// The animated values the board moves with.
@@ -473,14 +543,20 @@ fn key_table() -> Vec<(String, Key)> {
 fn bind_keys(ui: Ui, motion: Rc<Motion>) {
     let apple = apple_keys();
     for (stroke, key) in key_table() {
-        let Ok(parsed) = nsh_core::keymap::Keystroke::parse_with(&stroke, apple) else { continue };
+        let Ok(parsed) = nsh_core::keymap::Keystroke::parse_with(&stroke, apple) else {
+            continue;
+        };
         if parsed.reserved(os()).is_some() {
             continue;
         }
         let motion = motion.clone();
         on_key_with(
             &stroke,
-            KeyOptions { when: nsh_core::keymap::When::Always, repeat: true, pass_through: false },
+            KeyOptions {
+                when: nsh_core::keymap::When::Always,
+                repeat: true,
+                pass_through: false,
+            },
             move |_| handle_key(key, ui, &motion),
         );
     }
@@ -488,7 +564,10 @@ fn bind_keys(ui: Ui, motion: Rc<Motion>) {
 
 /// The first isle of the chapter isle `i` is in.
 fn chapter_start(i: usize) -> usize {
-    (0..=i).rev().find(|&k| k == 0 || LEVELS[k - 1].chapter != LEVELS[i].chapter).unwrap_or(0)
+    (0..=i)
+        .rev()
+        .find(|&k| k == 0 || LEVELS[k - 1].chapter != LEVELS[i].chapter)
+        .unwrap_or(0)
 }
 
 /// Opens today's tide.
@@ -502,7 +581,7 @@ fn open_review(state: &mut State) -> bool {
     let mut cleared: Vec<usize> = (0..LEVELS.len()).filter(|&i| state.best[i].is_some()).collect();
     cleared.sort_by_key(|&i| state.practiced[i]);
     let titles: Vec<&str> = cleared.iter().map(|&i| LEVELS[i].title).collect();
-    let mut drills: Vec<(&'static Level, usize)> = review::pick(&titles, 5, state.clears as u64)
+    let mut drills: Vec<(&'static Level, usize)> = review::pick(&titles, 5, u64::from(state.clears))
         .into_iter()
         .map(|l| {
             let from = l.title.strip_prefix("Review · ").and_then(index_of).unwrap_or(0);
@@ -539,7 +618,11 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                     }
                     Key::Char('k') => {
                         let start = chapter_start(*selected);
-                        *selected = if start < *selected { start } else { chapter_start(start.saturating_sub(1)) };
+                        *selected = if start < *selected {
+                            start
+                        } else {
+                            chapter_start(start.saturating_sub(1))
+                        };
                     }
                     Key::Char(c @ ('J' | 'K')) => {
                         let here = story::region_of(LEVELS[*selected].chapter);
@@ -547,8 +630,20 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                         *selected = if c == 'J' {
                             (*selected..n).find(|&k| region(k) != here).unwrap_or(*selected)
                         } else {
-                            let start = (0..=*selected).rev().take_while(|&k| region(k) == here).last().unwrap_or(0);
-                            if start < *selected { start } else { (0..start).rev().take_while(|&k| region(k) == region(start.saturating_sub(1))).last().unwrap_or(0) }
+                            let start = (0..=*selected)
+                                .rev()
+                                .take_while(|&k| region(k) == here)
+                                .last()
+                                .unwrap_or(0);
+                            if start < *selected {
+                                start
+                            } else {
+                                (0..start)
+                                    .rev()
+                                    .take_while(|&k| region(k) == region(start.saturating_sub(1)))
+                                    .last()
+                                    .unwrap_or(0)
+                            }
                         };
                     }
                     Key::Char('G') => *selected = n - 1,
@@ -581,7 +676,8 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                         if open_review(state) {
                             scene_changed = true;
                         } else {
-                            state.toast = "Review drills come from isles you've cleared: clear a few first.".into();
+                            state.toast =
+                                "Review drills come from isles you've cleared: clear a few first.".into();
                         }
                         return Some(Event::Moved);
                     }
@@ -606,7 +702,11 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             },
             Screen::Replay(r) => {
                 if r.key(key) {
-                    let Screen::Replay(r) = std::mem::replace(&mut state.screen, Screen::Menu { selected: 0 }) else { unreachable!() };
+                    let Screen::Replay(r) =
+                        std::mem::replace(&mut state.screen, Screen::Menu { selected: 0 })
+                    else {
+                        unreachable!()
+                    };
                     state.screen = Screen::Play(Box::new(r.session));
                     scene_changed = true;
                 }
@@ -623,16 +723,27 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                 }
             }
             Screen::Play(session) => {
-                let (index, level, campaign, free) = (session.index, session.level(), session.in_campaign(), session.free);
+                let (index, level, campaign, free) = (
+                    session.index,
+                    session.level(),
+                    session.in_campaign(),
+                    session.free,
+                );
                 if session.complete {
                     // A missed lesson: Enter tries the isle again.
                     let failed = !session.missed.is_empty();
                     match key {
                         Key::Char('p') => {
-                            let Screen::Play(done) = std::mem::replace(&mut state.screen, Screen::Menu { selected: index }) else { unreachable!() };
+                            let Screen::Play(done) =
+                                std::mem::replace(&mut state.screen, Screen::Menu { selected: index })
+                            else {
+                                unreachable!()
+                            };
                             state.screen = Screen::Replay(Box::new(replay::Replay::new(*done)));
                         }
-                        Key::Char('r') | Key::Enter if free && (failed || key == Key::Char('r')) => state.open_free(index),
+                        Key::Char('r') | Key::Enter if free && (failed || key == Key::Char('r')) => {
+                            state.open_free(index);
+                        }
                         Key::Char('r') => state.retry(level, index, campaign),
                         Key::Enter if failed => state.retry(level, index, campaign),
                         Key::Enter | Key::Char('n') if !state.drills.is_empty() => {
@@ -641,7 +752,9 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                             state.open_level(next, from);
                             state.drills = rest;
                         }
-                        Key::Enter | Key::Char('n') if campaign && !free && index + 1 < LEVELS.len() => state.open(index + 1),
+                        Key::Enter | Key::Char('n') if campaign && !free && index + 1 < LEVELS.len() => {
+                            state.open(index + 1);
+                        }
                         Key::Enter | Key::Char('n' | 'q') | Key::Esc => {
                             state.drills.clear();
                             state.screen = Screen::Menu { selected: index };
@@ -651,7 +764,8 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                     scene_changed = true;
                     return Some(Event::Moved);
                 }
-                let (keys_before, used_before, work_before) = (session.keys.len(), session.used.len(), work(session));
+                let (keys_before, used_before, work_before) =
+                    (session.keys.len(), session.used.len(), work(session));
                 let event = session.press(key);
                 if keys_before == 0 && !session.keys.is_empty() && state.started.is_none() {
                     state.started = Some(now_ms());
@@ -665,8 +779,14 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                         && state.grammar.insert(grammar::key(verb, noun))
                     {
                         let total = grammar::VERBS.len() * grammar::NOUNS.len();
-                        state.toast = format!("New word: {verb} + {noun}  ·  {} of {total} in your grammar (v on the map)", state.grammar.len());
-                        let _ = Storage::set_item("hjkl-quest.grammar", state.grammar.iter().cloned().collect::<Vec<_>>().join("|"));
+                        state.toast = format!(
+                            "New word: {verb} + {noun}  ·  {} of {total} in your grammar (v on the map)",
+                            state.grammar.len()
+                        );
+                        let _ = Storage::set_item(
+                            "hjkl-quest.grammar",
+                            state.grammar.iter().cloned().collect::<Vec<_>>().join("|"),
+                        );
                         new_word = true;
                     }
                 }
@@ -703,7 +823,11 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
                             }
                             "mute" | "sound" => {
                                 audio::set_muted(!audio::muted());
-                                state.toast = if audio::muted() { "Sound off".into() } else { "Sound on".into() };
+                                state.toast = if audio::muted() {
+                                    "Sound off".into()
+                                } else {
+                                    "Sound on".into()
+                                };
                             }
                             "help" | "h" | "intro" | "learn" => state.intro = true,
                             "w" => state.toast = "Saved! (progress saves by itself)".into(),
@@ -771,7 +895,9 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             ui.burst_at.set((cx, cy));
             ui.burst_color.set(GEM);
             motion.burst.set(0.0);
-            motion.burst.timing(1.0, 650.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+            motion
+                .burst
+                .timing(1.0, 650.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
         }
         Event::Squashed(p) => {
             audio::play(Sfx::Squash, 0.6);
@@ -779,12 +905,20 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             ui.burst_at.set((cx, cy + 6.0));
             ui.burst_color.set(BUG);
             motion.burst.set(0.0);
-            motion.burst.timing(1.0, 550.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+            motion
+                .burst
+                .timing(1.0, 550.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
         }
         Event::Bell => {
             audio::play(Sfx::Bell, 0.35);
             motion.shake.keyframes(
-                [Keyframe::new(0.0), Keyframe::new(-4.0), Keyframe::new(4.0), Keyframe::new(-2.0), Keyframe::new(0.0)],
+                [
+                    Keyframe::new(0.0),
+                    Keyframe::new(-4.0),
+                    Keyframe::new(4.0),
+                    Keyframe::new(-2.0),
+                    Keyframe::new(0.0),
+                ],
                 KeyframeTiming::new(220.0),
             );
         }
@@ -795,9 +929,18 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             ui.burst_at.set((cx, cy));
             ui.burst_color.set(0xff9a4c);
             motion.burst.set(0.0);
-            motion.burst.timing(1.0, 500.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+            motion
+                .burst
+                .timing(1.0, 500.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
             motion.shake.keyframes(
-                [Keyframe::new(0.0), Keyframe::new(-9.0), Keyframe::new(9.0), Keyframe::new(-5.0), Keyframe::new(3.0), Keyframe::new(0.0)],
+                [
+                    Keyframe::new(0.0),
+                    Keyframe::new(-9.0),
+                    Keyframe::new(9.0),
+                    Keyframe::new(-5.0),
+                    Keyframe::new(3.0),
+                    Keyframe::new(0.0),
+                ],
                 KeyframeTiming::new(340.0),
             );
         }
@@ -808,36 +951,71 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
             ui.burst_at.set((cx, cy));
             ui.burst_color.set(0xff6b6b);
             motion.burst.set(0.0);
-            motion.burst.timing(1.0, 500.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+            motion
+                .burst
+                .timing(1.0, 500.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
             motion.shake.keyframes(
-                [Keyframe::new(0.0), Keyframe::new(-9.0), Keyframe::new(9.0), Keyframe::new(-5.0), Keyframe::new(3.0), Keyframe::new(0.0)],
+                [
+                    Keyframe::new(0.0),
+                    Keyframe::new(-9.0),
+                    Keyframe::new(9.0),
+                    Keyframe::new(-5.0),
+                    Keyframe::new(3.0),
+                    Keyframe::new(0.0),
+                ],
                 KeyframeTiming::new(340.0),
             );
         }
         Event::Locked(_) => {
             audio::play(Sfx::Locked, 0.45);
             motion.shake.keyframes(
-                [Keyframe::new(0.0), Keyframe::new(-6.0), Keyframe::new(6.0), Keyframe::new(-3.0), Keyframe::new(0.0)],
+                [
+                    Keyframe::new(0.0),
+                    Keyframe::new(-6.0),
+                    Keyframe::new(6.0),
+                    Keyframe::new(-3.0),
+                    Keyframe::new(0.0),
+                ],
                 KeyframeTiming::new(260.0),
             );
         }
         Event::Complete if session_value(|s| !s.cleared()).unwrap_or(false) => {
             audio::play(Sfx::Locked, 0.5);
             motion.card.set(0.0);
-            motion.card.spring(1.0, Spring { stiffness: 170.0, damping: 14.0, ..Spring::default() });
+            motion.card.spring(
+                1.0,
+                Spring {
+                    stiffness: 170.0,
+                    damping: 14.0,
+                    ..Spring::default()
+                },
+            );
         }
         Event::Complete => {
             audio::play(Sfx::Gem, 0.4);
             audio::play(Sfx::Complete, 0.6);
             motion.card.set(0.0);
-            motion.card.spring(1.0, Spring { stiffness: 170.0, damping: 14.0, ..Spring::default() });
+            motion.card.spring(
+                1.0,
+                Spring {
+                    stiffness: 170.0,
+                    damping: 14.0,
+                    ..Spring::default()
+                },
+            );
         }
         _ => {}
     }
     if boss_hit {
         audio::play(Sfx::Hit, 0.55);
         motion.boss.keyframes(
-            [Keyframe::new(0.0), Keyframe::new(1.0), Keyframe::new(-0.6), Keyframe::new(0.3), Keyframe::new(0.0)],
+            [
+                Keyframe::new(0.0),
+                Keyframe::new(1.0),
+                Keyframe::new(-0.6),
+                Keyframe::new(0.3),
+                Keyframe::new(0.0),
+            ],
             KeyframeTiming::new(420.0),
         );
     }
@@ -852,7 +1030,9 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
     {
         ui.trail.set((tile_center(from), tile_center(to)));
         motion.trail.set(0.0);
-        motion.trail.timing(1.0, 650.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+        motion
+            .trail
+            .timing(1.0, 650.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
     }
     sync_theme(ui);
     if with_state(|s| matches!(s.screen, Screen::Menu { .. })) {
@@ -865,8 +1045,24 @@ fn handle_key(key: Key, ui: Ui, motion: &Motion) {
     {
         let ((fx, fy), (tx, ty)) = (tile_origin(at), tile_origin(*p));
         let timing = || KeyframeTiming::new(460.0).easing(Easing::Linear);
-        motion.hero_x.keyframes([Keyframe::new(fx), Keyframe::at(0.4, tx).ease(Easing::EaseOut), Keyframe::at(0.55, tx), Keyframe::new(fx).ease(Easing::EaseIn)], timing());
-        motion.hero_y.keyframes([Keyframe::new(fy), Keyframe::at(0.4, ty).ease(Easing::EaseOut), Keyframe::at(0.55, ty), Keyframe::new(fy).ease(Easing::EaseIn)], timing());
+        motion.hero_x.keyframes(
+            [
+                Keyframe::new(fx),
+                Keyframe::at(0.4, tx).ease(Easing::EaseOut),
+                Keyframe::at(0.55, tx),
+                Keyframe::new(fx).ease(Easing::EaseIn),
+            ],
+            timing(),
+        );
+        motion.hero_y.keyframes(
+            [
+                Keyframe::new(fy),
+                Keyframe::at(0.4, ty).ease(Easing::EaseOut),
+                Keyframe::at(0.55, ty),
+                Keyframe::new(fy).ease(Easing::EaseIn),
+            ],
+            timing(),
+        );
         motion.hop.keyframes(
             [
                 Keyframe::new(0.0),
@@ -889,8 +1085,11 @@ fn place_hero(ui: Ui, motion: &Motion, animate: bool) {
     let Some((cursor, rows, cols)) = with_state(|s| match &s.screen {
         Screen::Play(session) => {
             let e = &session.editor;
-            let rows = e.lines.len().max(session.level().goal_text().map_or(0, |g| g.lines().count()));
-            let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(0);
+            let rows = e
+                .lines
+                .len()
+                .max(session.level().goal_text().map_or(0, |g| g.lines().count()));
+            let cols = e.lines.iter().map(Vec::len).max().unwrap_or(0);
             Some((e.cursor, rows, cols))
         }
         _ => None,
@@ -899,10 +1098,18 @@ fn place_hero(ui: Ui, motion: &Motion, animate: bool) {
     };
     let (x, y) = tile_origin(cursor);
     if animate {
-        motion.hero_x.timing(x, 120.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
-        motion.hero_y.timing(y, 120.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+        motion
+            .hero_x
+            .timing(x, 120.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+        motion
+            .hero_y
+            .timing(y, 120.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
         motion.hop.keyframes(
-            [Keyframe::new(0.0), Keyframe::at(0.4, -9.0).ease(Easing::EaseOut), Keyframe::new(0.0)],
+            [
+                Keyframe::new(0.0),
+                Keyframe::at(0.4, -9.0).ease(Easing::EaseOut),
+                Keyframe::new(0.0),
+            ],
             KeyframeTiming::new(200.0).easing(Easing::EaseIn),
         );
     } else {
@@ -914,11 +1121,23 @@ fn place_hero(ui: Ui, motion: &Motion, animate: bool) {
     let (vw, vh) = ui.stage.get_untracked();
     let (ww, wh) = world_size(rows, cols.max(8));
     let (cx, cy) = tile_center(cursor);
-    let target_x = if ww <= vw { (vw - ww) / 2.0 } else { (vw / 2.0 - cx).clamp(vw - ww, 0.0) };
-    let target_y = if wh <= vh { (vh - wh) / 2.0 } else { (vh / 2.0 - cy).clamp(vh - wh, 0.0) };
+    let target_x = if ww <= vw {
+        (vw - ww) / 2.0
+    } else {
+        (vw / 2.0 - cx).clamp(vw - ww, 0.0)
+    };
+    let target_y = if wh <= vh {
+        (vh - wh) / 2.0
+    } else {
+        (vh / 2.0 - cy).clamp(vh - wh, 0.0)
+    };
     if animate {
-        motion.cam_x.timing(target_x, 380.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
-        motion.cam_y.timing(target_y, 380.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+        motion
+            .cam_x
+            .timing(target_x, 380.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
+        motion
+            .cam_y
+            .timing(target_y, 380.0, Easing::Curve(Curve::Cubic, EaseMode::Out));
     } else {
         motion.cam_x.set(target_x);
         motion.cam_y.set(target_y);
@@ -929,7 +1148,10 @@ fn place_hero(ui: Ui, motion: &Motion, animate: bool) {
 
 /// The goal of an editing level, as lines of characters.
 fn goal_lines(session: &Session) -> Option<Vec<Vec<char>>> {
-    session.level().goal_text().map(|g| g.split('\n').map(|l| l.chars().collect()).collect())
+    session
+        .level()
+        .goal_text()
+        .map(|g| g.split('\n').map(|l| l.chars().collect()).collect())
 }
 
 fn session_diff(session: &Session) -> Option<diff::Diff> {
@@ -940,8 +1162,16 @@ fn session_diff(session: &Session) -> Option<diff::Diff> {
 fn is_selected(e: &vim::Editor, p: Pos) -> bool {
     match e.mode {
         Mode::Visual { line } => {
-            let (s, t) = if e.anchor <= e.cursor { (e.anchor, e.cursor) } else { (e.cursor, e.anchor) };
-            if line { p.row >= s.row && p.row <= t.row } else { p >= s && p <= t }
+            let (s, t) = if e.anchor <= e.cursor {
+                (e.anchor, e.cursor)
+            } else {
+                (e.cursor, e.anchor)
+            };
+            if line {
+                p.row >= s.row && p.row <= t.row
+            } else {
+                p >= s && p <= t
+            }
         }
         Mode::Block => {
             let (r0, r1, c0, c1, to_end) = e.block_rect();
@@ -967,14 +1197,23 @@ fn draw_world(session: &Session) -> Painter {
         painter = painter
             .fill_color(hexa(0x000000, 0.18))
             .begin_path()
-            .ellipse_at(x + len as f32 * CW / 2.0 + 10.0, y + CH + DEPTH + 22.0, len as f32 * CW / 2.0 + 8.0, 7.0)
+            .ellipse_at(
+                x + len as f32 * CW / 2.0 + 10.0,
+                y + CH + DEPTH + 22.0,
+                len as f32 * CW / 2.0 + 8.0,
+                7.0,
+            )
             .fill();
     }
     painter = draw_rulers(painter, session);
 
     for (row, line) in e.lines.iter().enumerate() {
         if line.is_empty() {
-            let look = if is_selected(e, Pos { row, col: 0 }) { TileLook::Selected } else { TileLook::Plank };
+            let look = if is_selected(e, Pos { row, col: 0 }) {
+                TileLook::Selected
+            } else {
+                TileLook::Plank
+            };
             painter = draw_tile(painter, Pos { row, col: 0 }, None, look);
         }
         for (col, &ch) in line.iter().enumerate() {
@@ -1008,7 +1247,9 @@ fn draw_world(session: &Session) -> Painter {
         }
     }
 
-    let (Some(diff), Some(goal)) = (diff, goal) else { return painter };
+    let (Some(diff), Some(goal)) = (diff, goal) else {
+        return painter;
+    };
     // Lines missing at the end show as ghost rows below the isle; lines
     // missing in between as a seam where they go.
     let mut extra = 0;
@@ -1032,7 +1273,16 @@ fn draw_world(session: &Session) -> Painter {
         }
     }
     for (before, texts) in seams {
-        let shown: Vec<String> = texts.iter().map(|t| if t.is_empty() { "(empty line)".into() } else { t.clone() }).collect();
+        let shown: Vec<String> = texts
+            .iter()
+            .map(|t| {
+                if t.is_empty() {
+                    "(empty line)".into()
+                } else {
+                    t.clone()
+                }
+            })
+            .collect();
         painter = draw_seam(painter, before, &e.lines, &format!("+ {}", shown.join("  ⏎ ")));
     }
     // Full text on the cursor's row; elsewhere how much, to keep busy
@@ -1127,7 +1377,13 @@ fn draw_pill(painter: Painter, x: f32, y: f32, label: &str, color: u32) -> Paint
         .stroke_color(hexa(color, 0.95))
         .line_width(1.2)
         .begin_path()
-        .round_rect(Bounds { origin: point(px(x), px(y - 9.0)), size: size(px(w), px(18.0)) }, px(9.0))
+        .round_rect(
+            Bounds {
+                origin: point(px(x), px(y - 9.0)),
+                size: size(px(w), px(18.0)),
+            },
+            px(9.0),
+        )
         .fill()
         .stroke()
         .font("700 12px monospace")
@@ -1140,7 +1396,11 @@ fn draw_pill(painter: Painter, x: f32, y: f32, label: &str, color: u32) -> Paint
 /// Missing text inside a line: a glowing slot where it goes, and what.
 fn draw_insert(painter: Painter, at: Pos, text: &str, full: bool) -> Painter {
     let (x, y) = tile_origin(at);
-    let label = if full { format!("+{}", text.replace(' ', "␣")) } else { format!("+{}", text.chars().count()) };
+    let label = if full {
+        format!("+{}", text.replace(' ', "␣"))
+    } else {
+        format!("+{}", text.chars().count())
+    };
     let painter = painter
         .stroke_color(hexa(MISSING, 0.35))
         .line_width(7.0)
@@ -1162,7 +1422,12 @@ fn draw_insert(painter: Painter, at: Pos, text: &str, full: bool) -> Painter {
 /// Whole lines missing before buffer row `before`: a dashed seam between
 /// the rows, and their text.
 fn draw_seam(painter: Painter, before: usize, lines: &[Vec<char>], label: &str) -> Painter {
-    let width = lines[before.saturating_sub(1)..=before.min(lines.len() - 1)].iter().map(|l| l.len()).max().unwrap_or(1).max(1);
+    let width = lines[before.saturating_sub(1)..=before.min(lines.len() - 1)]
+        .iter()
+        .map(Vec::len)
+        .max()
+        .unwrap_or(1)
+        .max(1);
     let (x, y) = tile_origin(Pos { row: before, col: 0 });
     let painter = painter
         .stroke_color(hex(MISSING))
@@ -1188,7 +1453,11 @@ fn draw_rulers(painter: Painter, session: &Session) -> Painter {
         let (gx, gy) = (x + SKEW / 2.0 - 8.0, y + CH / 2.0 + 0.5);
         let here = row == cur.row;
         painter = painter
-            .font(if here { "700 13px monospace" } else { "500 12px monospace" })
+            .font(if here {
+                "700 13px monospace"
+            } else {
+                "500 12px monospace"
+            })
             .text_align(CanvasTextAlign::Right)
             .fill_color(if here { hex(accent) } else { hexa(0xece6ff, 0.38) })
             .fill_text(&(row + 1).to_string(), gx - 22.0, gy);
@@ -1197,11 +1466,15 @@ fn draw_rulers(painter: Painter, session: &Session) -> Painter {
             painter = painter
                 .font("700 11px monospace")
                 .fill_color(hexa(0xfff3b0, 0.7))
-                .fill_text(&format!("{}{}", if row < cur.row { '↑' } else { '↓' }, rel), gx, gy);
+                .fill_text(
+                    &format!("{}{}", if row < cur.row { '↑' } else { '↓' }, rel),
+                    gx,
+                    gy,
+                );
         }
     }
     // Columns along the top edge of the first row.
-    let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(0);
+    let cols = e.lines.iter().map(Vec::len).max().unwrap_or(0);
     let (_, top) = tile_origin(Pos { row: 0, col: 0 });
     let y = top - 30.0;
     for col in 0..cols {
@@ -1217,9 +1490,17 @@ fn draw_rulers(painter: Painter, session: &Session) -> Painter {
             .fill();
         if major || here {
             painter = painter
-                .font(if here { "700 12px monospace" } else { "500 11px monospace" })
+                .font(if here {
+                    "700 12px monospace"
+                } else {
+                    "500 11px monospace"
+                })
                 .text_align(CanvasTextAlign::Center)
-                .fill_color(if here { hex(accent) } else { hexa(0xece6ff, if n % 10 == 0 { 0.6 } else { 0.38 }) })
+                .fill_color(if here {
+                    hex(accent)
+                } else {
+                    hexa(0xece6ff, if n % 10 == 0 { 0.6 } else { 0.38 })
+                })
                 .fill_text(&n.to_string(), cx, y);
         }
     }
@@ -1314,7 +1595,17 @@ fn draw_tile(painter: Painter, p: Pos, c: Option<char>, look: TileLook) -> Paint
             painter = painter
                 .fill_color(hex(hue))
                 .begin_path()
-                .arc(cx - 3.0 + noise(Pos { row: p.col, col: p.row }) * 6.0, cy, 1.8, 0.0, TAU)
+                .arc(
+                    cx - 3.0
+                        + noise(Pos {
+                            row: p.col,
+                            col: p.row,
+                        }) * 6.0,
+                    cy,
+                    1.8,
+                    0.0,
+                    TAU,
+                )
                 .fill();
         }
         TileLook::Grass => {
@@ -1412,9 +1703,14 @@ fn draw_gems(session: &Session, bob: &AnimatedValue) -> Painter {
             .translate(cx, cy - 13.0)
             .translate(0.0, bob)
             .fill_style(
-                CanvasGradient::radial(point(px(0.0), px(0.0)), px(1.0), point(px(0.0), px(0.0)), px(16.0))
-                    .add_color_stop(percentage(0.0), hexa(GEM, 0.55))
-                    .add_color_stop(percentage(1.0), hexa(GEM, 0.0)),
+                CanvasGradient::radial(
+                    point(px(0.0), px(0.0)),
+                    px(1.0),
+                    point(px(0.0), px(0.0)),
+                    px(16.0),
+                )
+                .add_color_stop(percentage(0.0), hexa(GEM, 0.55))
+                .add_color_stop(percentage(1.0), hexa(GEM, 0.0)),
             )
             .begin_path()
             .arc(0.0, 0.0, 16.0, 0.0, TAU)
@@ -1447,7 +1743,7 @@ fn draw_sentries(session: &Session, bob: &AnimatedValue) -> Painter {
     let mut painter = Painter::new();
     for s in &session.sentries {
         let (cx, cy) = tile_center(s.at);
-        let d = s.dir as f32;
+        let d = f32::from(s.dir);
         painter = painter
             .fill_color(hexa(0x000000, 0.3))
             .begin_path()
@@ -1457,9 +1753,14 @@ fn draw_sentries(session: &Session, bob: &AnimatedValue) -> Painter {
             .translate(cx, cy - 16.0)
             .translate(0.0, &bob.mul(0.6))
             .fill_style(
-                CanvasGradient::radial(point(px(0.0), px(0.0)), px(2.0), point(px(0.0), px(0.0)), px(22.0))
-                    .add_color_stop(percentage(0.0), hexa(0xff9a4c, 0.45))
-                    .add_color_stop(percentage(1.0), hexa(0xff9a4c, 0.0)),
+                CanvasGradient::radial(
+                    point(px(0.0), px(0.0)),
+                    px(2.0),
+                    point(px(0.0), px(0.0)),
+                    px(22.0),
+                )
+                .add_color_stop(percentage(0.0), hexa(0xff9a4c, 0.45))
+                .add_color_stop(percentage(1.0), hexa(0xff9a4c, 0.0)),
             )
             .begin_path()
             .arc(0.0, 0.0, 22.0, 0.0, TAU)
@@ -1587,7 +1888,7 @@ fn minimap_size(session: &Session) -> (f32, f32) {
     let e = &session.editor;
     let goal_rows = session.level().goal_text().map_or(0, |g| g.lines().count());
     let rows = e.lines.len().max(goal_rows);
-    let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(1).max(1);
+    let cols = e.lines.iter().map(Vec::len).max().unwrap_or(1).max(1);
     let (cw, ch) = minimap_cell(rows, cols);
     (cols as f32 * cw + MINI_GUTTER.0, rows as f32 * ch + MINI_GUTTER.1)
 }
@@ -1601,7 +1902,7 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
     let e = &session.editor;
     let goal_rows = session.level().goal_text().map_or(0, |g| g.lines().count());
     let rows = e.lines.len().max(goal_rows);
-    let cols = e.lines.iter().map(|l| l.len()).max().unwrap_or(1).max(1);
+    let cols = e.lines.iter().map(Vec::len).max().unwrap_or(1).max(1);
     let (cw, ch) = minimap_cell(rows, cols);
     let (mw, mh) = (cols as f32 * cw, rows as f32 * ch);
     let goal = goal_lines(session);
@@ -1617,7 +1918,9 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
     for (row, line) in e.lines.iter().enumerate() {
         let y = row as f32 * ch;
         if line.is_empty() {
-            painter = painter.fill_color(hexa(WOOD, 0.9)).fill_rect(0.0, y + 1.0, cw - 0.5, ch - 2.0);
+            painter = painter
+                .fill_color(hexa(WOOD, 0.9))
+                .fill_rect(0.0, y + 1.0, cw - 0.5, ch - 2.0);
         }
         for (col, &c) in line.iter().enumerate() {
             let p = Pos { row, col };
@@ -1631,9 +1934,15 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
             } else {
                 TileLook::of(c).color()
             };
-            painter = painter.fill_color(hex(color)).fill_rect(col as f32 * cw, y, cw - 0.5, ch - 0.5);
+            painter = painter
+                .fill_color(hex(color))
+                .fill_rect(col as f32 * cw, y, cw - 0.5, ch - 0.5);
             if letters && !c.is_whitespace() && !(goal.is_none() && c == '.') {
-                painter = painter.fill_color(hexa(GLYPH, 0.95)).fill_text(&c.to_string(), col as f32 * cw + cw / 2.0, y + ch / 2.0 + 0.5);
+                painter = painter.fill_color(hexa(GLYPH, 0.95)).fill_text(
+                    &c.to_string(),
+                    col as f32 * cw + cw / 2.0,
+                    y + ch / 2.0 + 0.5,
+                );
             }
         }
     }
@@ -1642,21 +1951,41 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
         let mut extra = 0;
         for &(before, g) in &diff.missing_lines {
             if before < e.lines.len() {
-                painter = painter.fill_color(hex(MISSING)).fill_rect(0.0, before as f32 * ch - 1.0, mw, 2.0);
+                painter = painter
+                    .fill_color(hex(MISSING))
+                    .fill_rect(0.0, before as f32 * ch - 1.0, mw, 2.0);
                 continue;
             }
             let y = (e.lines.len() + extra) as f32 * ch;
             extra += 1;
             for (col, &c) in goal[g].iter().enumerate().take(cols) {
                 let x = col as f32 * cw;
-                painter = painter.stroke_color(hexa(MISSING, 0.6)).line_width(1.0).begin_path().move_to(x + 0.5, y + 0.5).line_to(x + cw - 1.0, y + 0.5).line_to(x + cw - 1.0, y + ch - 1.0).line_to(x + 0.5, y + ch - 1.0).close_path().stroke();
+                painter = painter
+                    .stroke_color(hexa(MISSING, 0.6))
+                    .line_width(1.0)
+                    .begin_path()
+                    .move_to(x + 0.5, y + 0.5)
+                    .line_to(x + cw - 1.0, y + 0.5)
+                    .line_to(x + cw - 1.0, y + ch - 1.0)
+                    .line_to(x + 0.5, y + ch - 1.0)
+                    .close_path()
+                    .stroke();
                 if letters && !c.is_whitespace() {
-                    painter = painter.fill_color(hexa(MISSING, 0.8)).fill_text(&c.to_string(), x + cw / 2.0, y + ch / 2.0 + 0.5);
+                    painter = painter.fill_color(hexa(MISSING, 0.8)).fill_text(
+                        &c.to_string(),
+                        x + cw / 2.0,
+                        y + ch / 2.0 + 0.5,
+                    );
                 }
             }
         }
         for (at, _) in &diff.inserts {
-            painter = painter.fill_color(hex(MISSING)).fill_rect(at.col as f32 * cw - 1.0, at.row as f32 * ch - 1.0, 2.5, ch + 1.0);
+            painter = painter.fill_color(hex(MISSING)).fill_rect(
+                at.col as f32 * cw - 1.0,
+                at.row as f32 * ch - 1.0,
+                2.5,
+                ch + 1.0,
+            );
         }
     }
     for &t in &session.traps {
@@ -1673,25 +2002,49 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
     for &(p, got) in &session.gems {
         if !got {
             let (x, y) = (p.col as f32 * cw + cw / 2.0, p.row as f32 * ch + ch / 2.0);
-            painter = painter.fill_color(hex(GEM)).begin_path().arc(x, y, (cw * 0.55).max(2.0), 0.0, TAU).fill();
+            painter = painter
+                .fill_color(hex(GEM))
+                .begin_path()
+                .arc(x, y, (cw * 0.55).max(2.0), 0.0, TAU)
+                .fill();
         }
     }
     for bug in &session.bugs {
-        let (x, y) = (bug.at.col as f32 * cw + cw / 2.0, bug.at.row as f32 * ch + ch / 2.0);
-        painter = painter.fill_color(hex(BUG)).begin_path().arc(x, y, (cw * 0.6).max(2.5), 0.0, TAU).fill();
+        let (x, y) = (
+            bug.at.col as f32 * cw + cw / 2.0,
+            bug.at.row as f32 * ch + ch / 2.0,
+        );
+        painter = painter
+            .fill_color(hex(BUG))
+            .begin_path()
+            .arc(x, y, (cw * 0.6).max(2.5), 0.0, TAU)
+            .fill();
     }
     for s in &session.sentries {
         let (x, y) = (s.at.col as f32 * cw + cw / 2.0, s.at.row as f32 * ch + ch / 2.0);
-        painter = painter.fill_color(hex(0xff9a4c)).begin_path().arc(x, y, (cw * 0.6).max(2.5), 0.0, TAU).fill();
+        painter = painter
+            .fill_color(hex(0xff9a4c))
+            .begin_path()
+            .arc(x, y, (cw * 0.6).max(2.5), 0.0, TAU)
+            .fill();
     }
     let cur = e.cursor;
     painter = painter
         .fill_color(hex(mode_color(e)))
         .stroke_color(hex(0xffffff))
         .line_width(1.0)
-        .fill_rect(cur.col as f32 * cw - 1.0, cur.row as f32 * ch - 1.0, cw + 1.5, ch + 1.5);
+        .fill_rect(
+            cur.col as f32 * cw - 1.0,
+            cur.row as f32 * ch - 1.0,
+            cw + 1.5,
+            ch + 1.5,
+        );
     if letters && let Some(c) = e.char_at(cur).filter(|c| !c.is_whitespace()) {
-        painter = painter.fill_color(hex(0x1a1430)).fill_text(&c.to_string(), cur.col as f32 * cw + cw / 2.0, cur.row as f32 * ch + ch / 2.0 + 0.5);
+        painter = painter.fill_color(hex(0x1a1430)).fill_text(
+            &c.to_string(),
+            cur.col as f32 * cw + cw / 2.0,
+            cur.row as f32 * ch + ch / 2.0 + 0.5,
+        );
     }
 
     // The stage's window onto the board, mapped back to rows and columns.
@@ -1737,7 +2090,9 @@ fn draw_minimap(session: &Session, motion: &Motion, stage: (f32, f32)) -> Painte
 fn draw_minimap_rulers(painter: Painter, cur: Pos, rows: usize, cols: usize, cw: f32, ch: f32) -> Painter {
     let (gx, gy) = MINI_GUTTER;
     let accent = 0xfff3b0;
-    let mut painter = painter.font("600 9px monospace").text_baseline(CanvasTextBaseline::Middle);
+    let mut painter = painter
+        .font("600 9px monospace")
+        .text_baseline(CanvasTextBaseline::Middle);
     let row_step = if ch >= 9.0 { 5 } else { 10 };
     painter = painter.text_align(CanvasTextAlign::Right);
     for row in 0..rows {
@@ -1798,7 +2153,7 @@ fn draw_bugs(session: &Session, bob: &AnimatedValue) -> Painter {
     let mut painter = Painter::new();
     for bug in &session.bugs {
         let (cx, cy) = tile_center(bug.at);
-        let d = bug.dir as f32;
+        let d = f32::from(bug.dir);
         painter = painter
             .fill_color(hexa(0x000000, 0.3))
             .begin_path()
@@ -1812,7 +2167,13 @@ fn draw_bugs(session: &Session, bob: &AnimatedValue) -> Painter {
             .line_cap(LineCap::Round);
         // Legs, three a side.
         for k in [-5.0f32, 0.0, 5.0] {
-            painter = painter.begin_path().move_to(k, -2.0).line_to(k - 2.0, -8.0).move_to(k, 2.0).line_to(k - 2.0, 8.0).stroke();
+            painter = painter
+                .begin_path()
+                .move_to(k, -2.0)
+                .line_to(k - 2.0, -8.0)
+                .move_to(k, 2.0)
+                .line_to(k - 2.0, 8.0)
+                .stroke();
         }
         painter = painter
             .fill_color(hex(BUG))
@@ -1856,7 +2217,13 @@ fn draw_trail(path: ((f32, f32), (f32, f32)), trail: &AnimatedValue) -> Painter 
     for k in 0..n {
         let t = k as f32 / n as f32;
         let (x, y) = (x0 + (x1 - x0) * t, y0 + (y1 - y0) * t - 4.0);
-        painter = painter.save().translate(x, y + (k % 2) as f32 * 3.0).begin_path().arc(0.0, 0.0, &grow, 0.0, TAU).fill().restore();
+        painter = painter
+            .save()
+            .translate(x, y + (k % 2) as f32 * 3.0)
+            .begin_path()
+            .arc(0.0, 0.0, &grow, 0.0, TAU)
+            .fill()
+            .restore();
     }
     painter
 }
@@ -1910,10 +2277,23 @@ fn draw_sky(size: (f32, f32), motion: &Motion, theme: story::Theme) -> Painter {
         painter = painter.save().global_alpha(alpha).fill_color(hex(0xfdf8ff));
         for i in 0..70u32 {
             let seed = i * 2 + group;
-            let fx = noise(Pos { row: seed as usize, col: 7 });
-            let fy = noise(Pos { row: 3, col: seed as usize + 11 });
-            let r = 0.5 + noise(Pos { row: seed as usize, col: seed as usize }) * 1.3;
-            painter = painter.begin_path().arc(fx * w, fy * h * 0.75, r, 0.0, TAU).fill();
+            let fx = noise(Pos {
+                row: seed as usize,
+                col: 7,
+            });
+            let fy = noise(Pos {
+                row: 3,
+                col: seed as usize + 11,
+            });
+            let r = 0.5
+                + noise(Pos {
+                    row: seed as usize,
+                    col: seed as usize,
+                }) * 1.3;
+            painter = painter
+                .begin_path()
+                .arc(fx * w, fy * h * 0.75, r, 0.0, TAU)
+                .fill();
         }
         painter = painter.restore();
     }
@@ -1923,15 +2303,24 @@ fn draw_sky(size: (f32, f32), motion: &Motion, theme: story::Theme) -> Painter {
 /// Drifting clouds low on the horizon.
 fn draw_clouds(mut painter: Painter, size: (f32, f32), motion: &Motion) -> Painter {
     let (w, h) = size;
-    for (k, (y, len, alpha)) in [(0.78, 0.5, 0.10), (0.88, 0.7, 0.08), (0.95, 0.45, 0.12)].iter().enumerate() {
+    for (k, (y, len, alpha)) in [(0.78, 0.5, 0.10), (0.88, 0.7, 0.08), (0.95, 0.45, 0.12)]
+        .iter()
+        .enumerate()
+    {
         let speed = [1.0, 0.6, 1.4][k];
         let offset = motion.drift.mul(w * speed);
-        painter = painter.save().translate(&offset, 0.0).fill_color(hexa(0xd9c8ff, *alpha));
+        painter = painter
+            .save()
+            .translate(&offset, 0.0)
+            .fill_color(hexa(0xd9c8ff, *alpha));
         for copy in [-1.0f32, 0.0] {
             let x0 = copy * w * speed + k as f32 * 140.0;
             for b in 0..5 {
                 let bx = x0 + b as f32 * w * len / 5.0;
-                painter = painter.begin_path().ellipse_at(bx, h * y, w * len / 4.0, 18.0 + (b % 2) as f32 * 8.0).fill();
+                painter = painter
+                    .begin_path()
+                    .ellipse_at(bx, h * y, w * len / 4.0, 18.0 + (b % 2) as f32 * 8.0)
+                    .fill();
             }
         }
         painter = painter.restore();
@@ -1947,15 +2336,34 @@ fn draw_weather(mut painter: Painter, size: (f32, f32), motion: &Motion, weather
     if !matches!(weather, Weather::Fireflies | Weather::Motes) {
         // Two copies a screen apart, moving one screen per loop: seamless.
         let rising = weather == Weather::Embers;
-        let shift = if rising { motion.fall.mul(-h) } else { motion.fall.mul(h) };
+        let shift = if rising {
+            motion.fall.mul(-h)
+        } else {
+            motion.fall.mul(h)
+        };
         painter = painter.save().translate(0.0, &shift);
         for copy in [0.0f32, if rising { 1.0 } else { -1.0 }] {
             for i in 0..60u32 {
-                let x = noise(Pos { row: i as usize + 90, col: 13 }) * w;
-                let y = noise(Pos { row: 17, col: i as usize + 120 }) * h + copy * h;
-                let s = 0.6 + noise(Pos { row: i as usize, col: 99 });
+                let x = noise(Pos {
+                    row: i as usize + 90,
+                    col: 13,
+                }) * w;
+                let y = noise(Pos {
+                    row: 17,
+                    col: i as usize + 120,
+                }) * h
+                    + copy * h;
+                let s = 0.6
+                    + noise(Pos {
+                        row: i as usize,
+                        col: 99,
+                    });
                 painter = match weather {
-                    Weather::Snow => painter.fill_color(hexa(0xffffff, 0.75)).begin_path().arc(x, y, 1.4 * s + 0.6, 0.0, TAU).fill(),
+                    Weather::Snow => painter
+                        .fill_color(hexa(0xffffff, 0.75))
+                        .begin_path()
+                        .arc(x, y, 1.4 * s + 0.6, 0.0, TAU)
+                        .fill(),
                     Weather::Rain => painter
                         .stroke_color(hexa(0xb8d0ff, 0.35))
                         .line_width(1.0)
@@ -1968,17 +2376,33 @@ fn draw_weather(mut painter: Painter, size: (f32, f32), motion: &Motion, weather
                         .begin_path()
                         .ellipse_at(x, y, 3.5 * s, 1.8 * s)
                         .fill(),
-                    _ => painter.fill_color(hexa(0xffa04a, 0.7)).begin_path().arc(x, y, 1.2 * s, 0.0, TAU).fill(),
+                    _ => painter
+                        .fill_color(hexa(0xffa04a, 0.7))
+                        .begin_path()
+                        .arc(x, y, 1.2 * s, 0.0, TAU)
+                        .fill(),
                 };
             }
         }
         return painter.restore();
     }
-    let glow = if weather == Weather::Motes { 0xcfe0ff } else { 0xfff7a0 };
+    let glow = if weather == Weather::Motes {
+        0xcfe0ff
+    } else {
+        0xfff7a0
+    };
     painter = painter.save().translate(&motion.fly_x, &motion.fly_y);
     for i in 0..14u32 {
-        let fx = noise(Pos { row: i as usize + 40, col: 3 }) * w;
-        let fy = h * 0.35 + noise(Pos { row: 5, col: i as usize + 60 }) * h * 0.6;
+        let fx = noise(Pos {
+            row: i as usize + 40,
+            col: 3,
+        }) * w;
+        let fy = h * 0.35
+            + noise(Pos {
+                row: 5,
+                col: i as usize + 60,
+            }) * h
+                * 0.6;
         painter = painter
             .fill_style(
                 CanvasGradient::radial(point(px(fx), px(fy)), px(0.5), point(px(fx), px(fy)), px(7.0))
@@ -1998,7 +2422,11 @@ trait EllipseAt {
 
 impl EllipseAt for Painter {
     fn ellipse_at(self, x: f32, y: f32, rx: f32, ry: f32) -> Self {
-        self.save().translate(x, y).scale(rx.max(0.01), ry.max(0.01)).arc(0.0, 0.0, 1.0, 0.0, TAU).restore()
+        self.save()
+            .translate(x, y)
+            .scale(rx.max(0.01), ry.max(0.01))
+            .arc(0.0, 0.0, 1.0, 0.0, TAU)
+            .restore()
     }
 }
 
@@ -2014,7 +2442,13 @@ fn chip(label: impl Into<String>, color: u32) -> impl IntoElement {
         .bg(hexa(color, 0.16))
         .border_1()
         .border_color(hexa(color, 0.45))
-        .child(text(label.into()).font_family(MONO).text_size(px(13.0)).text_color(hex(color)).font_weight(FontWeight::BOLD))
+        .child(
+            text(label.into())
+                .font_family(MONO)
+                .text_size(px(13.0))
+                .text_color(hex(color))
+                .font_weight(FontWeight::BOLD),
+        )
 }
 
 /// The application's root component.
@@ -2031,7 +2465,9 @@ pub fn App() -> impl IntoElement {
         trail: signal(((0.0_f32, 0.0_f32), (0.0_f32, 0.0_f32))),
         chapter: signal(0_usize),
     };
-    set_interval(std::time::Duration::from_millis(520), move || ui.beat.update(|b| *b += 1));
+    set_interval(std::time::Duration::from_millis(520), move || {
+        ui.beat.update(|b| *b += 1);
+    });
     let motion = Rc::new(Motion {
         hero_x: animated_value(0.0),
         hero_y: animated_value(0.0),
@@ -2056,7 +2492,11 @@ pub fn App() -> impl IntoElement {
     let breathe = |v: &AnimatedValue, a: f32, b: f32, ms: f32| {
         v.keyframes(
             [Keyframe::new(a), Keyframe::new(b)],
-            KeyframeTiming::new(ms).easing(Easing::EaseInOut).infinite().direction(PlaybackDirection::Alternate).frame_rate(30.0),
+            KeyframeTiming::new(ms)
+                .easing(Easing::EaseInOut)
+                .infinite()
+                .direction(PlaybackDirection::Alternate)
+                .frame_rate(30.0),
         );
     };
     breathe(&motion.bob, -2.5, 2.5, 1100.0);
@@ -2067,18 +2507,24 @@ pub fn App() -> impl IntoElement {
     breathe(&motion.fly_y, 12.0, -18.0, 4300.0);
     motion.drift.keyframes(
         [Keyframe::new(0.0), Keyframe::new(1.0)],
-        KeyframeTiming::new(90_000.0).easing(Easing::Linear).infinite().frame_rate(20.0),
+        KeyframeTiming::new(90_000.0)
+            .easing(Easing::Linear)
+            .infinite()
+            .frame_rate(20.0),
     );
     motion.fall.keyframes(
         [Keyframe::new(0.0), Keyframe::new(1.0)],
-        KeyframeTiming::new(9_000.0).easing(Easing::Linear).infinite().frame_rate(30.0),
+        KeyframeTiming::new(9_000.0)
+            .easing(Easing::Linear)
+            .infinite()
+            .frame_rate(30.0),
     );
 
     audio::load_all();
     audio::start_ambience();
     bind_keys(ui, motion.clone());
     follow_url(ui);
-    with_state(|s| s.new_run());
+    with_state(State::new_run);
     sync_theme(ui);
 
     let sky_motion = motion.clone();
@@ -2091,31 +2537,33 @@ pub fn App() -> impl IntoElement {
         .child(
             canvas(move || {
                 let chapter = ui.chapter.get();
-                draw_sky(ui.window.get(), &sky_motion, story::CHAPTERS[chapter.min(story::CHAPTERS.len() - 1)].theme)
+                draw_sky(
+                    ui.window.get(),
+                    &sky_motion,
+                    story::CHAPTERS[chapter.min(story::CHAPTERS.len() - 1)].theme,
+                )
             })
-                .absolute()
-                .top_0()
-                .left_0()
-                .right_0()
-                .bottom_0(),
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .bottom_0(),
         )
-        .child(
-            view().flex_1().p_safe_area().child(dynamic(move || {
-                ui.scene.get();
-                let which = with_state(|s| match s.screen {
-                    Screen::Play(_) => 0,
-                    Screen::Menu { .. } => 1,
-                    Screen::Grammar { .. } => 2,
-                    Screen::Replay(_) => 3,
-                });
-                match which {
-                    0 => play_screen(ui, screen_motion.clone()).into_element(),
-                    1 => worldmap::menu_screen(ui, screen_motion.clone()).into_element(),
-                    2 => screens::grammar_screen(ui).into_element(),
-                    _ => replay::replay_screen(ui).into_element(),
-                }
-            })),
-        )
+        .child(view().flex_1().p_safe_area().child(dynamic(move || {
+            ui.scene.get();
+            let which = with_state(|s| match s.screen {
+                Screen::Play(_) => 0,
+                Screen::Menu { .. } => 1,
+                Screen::Grammar { .. } => 2,
+                Screen::Replay(_) => 3,
+            });
+            match which {
+                0 => play_screen(ui, screen_motion.clone()).into_element(),
+                1 => worldmap::menu_screen(ui, screen_motion.clone()).into_element(),
+                2 => screens::grammar_screen(ui).into_element(),
+                _ => replay::replay_screen(ui).into_element(),
+            }
+        })))
 }
 
 // --------------------------------------------------------------------- url
@@ -2152,7 +2600,7 @@ thread_local! {
 fn follow_url(ui: Ui) {
     effect(move || {
         ui.scene.get();
-        if !URL_READ.with(|r| r.get()) {
+        if !URL_READ.with(std::cell::Cell::get) {
             return;
         }
         let here = with_state(|s| match &s.screen {
@@ -2177,9 +2625,10 @@ fn follow_url(ui: Ui) {
         loop {
             let change = next_app_url_change().await;
             let target = isle_in(&change.url);
-            with_state(|s| match target {
-                Some(i) => s.open(i),
-                None => {
+            with_state(|s| {
+                if let Some(i) = target {
+                    s.open(i)
+                } else {
                     let selected = match &s.screen {
                         Screen::Play(p) => p.index,
                         Screen::Replay(r) => r.session.index,
@@ -2204,7 +2653,9 @@ fn session_value<R>(f: impl FnOnce(&Session) -> R) -> Option<R> {
 }
 
 fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
-    let Some((index, level, campaign)) = session_value(|s| (s.index, s.level(), s.in_campaign())) else { return view().into_element() };
+    let Some((index, level, campaign)) = session_value(|s| (s.index, s.level(), s.in_campaign())) else {
+        return view().into_element();
+    };
     // Place the wisp at once when the level opens.
     place_hero(ui, &motion, false);
 
@@ -2240,7 +2691,14 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                         .bind_translate_x(&motion.shake)
                         .w(move || {
                             ui.tick.get();
-                            px(session_value(|s| world_size(s.editor.lines.len() + 2, s.editor.lines.iter().map(|l| l.len()).max().unwrap_or(0).max(8) + 12).0).unwrap_or(400.0))
+                            px(session_value(|s| {
+                                world_size(
+                                    s.editor.lines.len() + 2,
+                                    s.editor.lines.iter().map(Vec::len).max().unwrap_or(0).max(8) + 12,
+                                )
+                                .0
+                            })
+                            .unwrap_or(400.0))
                         })
                         .h(move || {
                             ui.tick.get();
@@ -2268,7 +2726,14 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                             .right_0()
                             .bottom_0(),
                         )
-                        .child(canvas(move || draw_trail(ui.trail.get(), &trail.trail)).absolute().top_0().left_0().right_0().bottom_0())
+                        .child(
+                            canvas(move || draw_trail(ui.trail.get(), &trail.trail))
+                                .absolute()
+                                .top_0()
+                                .left_0()
+                                .right_0()
+                                .bottom_0(),
+                        )
                         .child(
                             canvas(move || {
                                 ui.tick.get();
@@ -2352,12 +2817,21 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                 .flex_1()
                 .min_w(px(220.0))
                 .gap_1()
-                .child(text(level.chapter).text_size(px(12.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.75)))
                 .child(
-                    text(if campaign { format!("{}. {}", index + 1, level.title) } else { level.title.to_string() })
-                        .text_size(px(24.0))
-                        .font_weight(FontWeight::BOLD)
-                        .text_color(hex(0xfff3b0)),
+                    text(level.chapter)
+                        .text_size(px(12.0))
+                        .letter_spacing(px(1.5))
+                        .text_color(hexa(0xc9b8ff, 0.75)),
+                )
+                .child(
+                    text(if campaign {
+                        format!("{}. {}", index + 1, level.title)
+                    } else {
+                        level.title.to_string()
+                    })
+                    .text_size(px(24.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(hex(0xfff3b0)),
                 ),
         )
         .child(stat("KEYS", move || {
@@ -2382,7 +2856,11 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
             ui.tick.get();
             session_value(|s| {
                 let total = s.gems.len();
-                if total == 0 { "–".to_string() } else { format!("{}/{}", total - s.gems_left(), total) }
+                if total == 0 {
+                    "–".to_string()
+                } else {
+                    format!("{}/{}", total - s.gems_left(), total)
+                }
             })
             .unwrap_or_default()
         }))
@@ -2405,7 +2883,11 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                 session_value(|s| {
                     let keys = format_keys(&s.keys);
                     let chars: Vec<char> = keys.chars().collect();
-                    if chars.len() > 70 { format!("…{}", chars[chars.len() - 70..].iter().collect::<String>()) } else { keys }
+                    if chars.len() > 70 {
+                        format!("…{}", chars[chars.len() - 70..].iter().collect::<String>())
+                    } else {
+                        keys
+                    }
                 })
                 .unwrap_or_default()
             })
@@ -2418,14 +2900,25 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
     // On narrow screens the lesson panel folds into a strip of its commands.
     let strip = dynamic(move || {
         (ui.window.get().0 < 980.0).then(|| {
-            let chips = view().flex_row().flex_wrap().gap_2().items_center().children(level.teaches.iter().map(|(keys, what)| {
+            let chips =
                 view()
                     .flex_row()
-                    .gap_1()
+                    .flex_wrap()
+                    .gap_2()
                     .items_center()
-                    .child(chip(*keys, 0xfff3b0))
-                    .child(text(*what).text_size(px(12.0)).text_color(hexa(0xece6ff, 0.7)).mr(px(6.0)))
-            }));
+                    .children(level.teaches.iter().map(|(keys, what)| {
+                        view()
+                            .flex_row()
+                            .gap_1()
+                            .items_center()
+                            .child(chip(*keys, 0xfff3b0))
+                            .child(
+                                text(*what)
+                                    .text_size(px(12.0))
+                                    .text_color(hexa(0xece6ff, 0.7))
+                                    .mr(px(6.0)),
+                            )
+                    }));
             let goal = level.goal_text().map(|_| {
                 view()
                     .flex_row()
@@ -2435,10 +2928,20 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                     .py(px(6.0))
                     .rounded(px(8.0))
                     .bg(hexa(0x000000, 0.35))
-                    .child(text("GOAL").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(3.0)))
+                    .child(
+                        text("GOAL")
+                            .text_size(px(11.0))
+                            .letter_spacing(px(1.5))
+                            .text_color(hexa(0xc9b8ff, 0.7))
+                            .mt(px(3.0)),
+                    )
                     .child(view().flex_1().child(goal_view(ui, 12.0)))
             });
-            view().gap_2().child(chips).child(lesson_checklist(ui, level.title)).child(goal)
+            view()
+                .gap_2()
+                .child(chips)
+                .child(lesson_checklist(ui, level.title))
+                .child(goal)
         })
     });
     view()
@@ -2453,7 +2956,9 @@ fn play_screen(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                 .flex_row()
                 .gap_4()
                 .child(view().flex_1().gap_2().child(stage).child(trail))
-                .child(dynamic(move || (ui.window.get().0 >= 980.0).then(|| side_panel(level, ui)))),
+                .child(dynamic(move || {
+                    (ui.window.get().0 >= 980.0).then(|| side_panel(level, ui))
+                })),
         )
         .child(intro::intro_modal(ui))
         .into_element()
@@ -2463,8 +2968,19 @@ fn stat(label: &'static str, value: impl Fn() -> String + 'static) -> impl IntoE
     view()
         .items_end()
         .min_w(px(64.0))
-        .child(text(label).text_size(px(11.0)).letter_spacing(px(1.2)).text_color(hexa(0xffffff, 0.45)))
-        .child(text(value).font_family(MONO).text_size(px(22.0)).font_weight(FontWeight::BOLD).text_color(hex(0xece6ff)))
+        .child(
+            text(label)
+                .text_size(px(11.0))
+                .letter_spacing(px(1.2))
+                .text_color(hexa(0xffffff, 0.45)),
+        )
+        .child(
+            text(value)
+                .font_family(MONO)
+                .text_size(px(22.0))
+                .font_weight(FontWeight::BOLD)
+                .text_color(hex(0xece6ff)),
+        )
 }
 
 fn status_line(ui: Ui) -> impl IntoElement {
@@ -2546,7 +3062,8 @@ fn status_line(ui: Ui) -> impl IntoElement {
         .child(
             text(move || {
                 ui.tick.get();
-                session_value(|s| format!("{}:{}", s.editor.cursor.row + 1, s.editor.cursor.col + 1)).unwrap_or_default()
+                session_value(|s| format!("{}:{}", s.editor.cursor.row + 1, s.editor.cursor.col + 1))
+                    .unwrap_or_default()
             })
             .font_family(MONO)
             .text_size(px(13.0))
@@ -2555,7 +3072,7 @@ fn status_line(ui: Ui) -> impl IntoElement {
 }
 
 fn with_state_toast() -> String {
-    STATE.with(|s| s.try_borrow().map(|s| s.toast.clone()).unwrap_or_default())
+    STATE.with(|s| s.try_borrow().map_or_default(|s| s.toast.clone()))
 }
 
 /// Goal characters already in the buffer.
@@ -2571,26 +3088,42 @@ fn lesson_checklist(ui: Ui, title: &'static str) -> impl IntoElement {
         .flex_wrap()
         .items_center()
         .gap_2()
-        .child(text("USE ON THIS ISLE").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mr(px(4.0)))
+        .child(
+            text("USE ON THIS ISLE")
+                .text_size(px(11.0))
+                .letter_spacing(px(1.5))
+                .text_color(hexa(0xc9b8ff, 0.7))
+                .mr(px(4.0)),
+        )
         .child(dynamic(move || {
             ui.tick.get();
             let status = session_value(|s| lessons::status(title, &s.used)).unwrap_or_default();
-            Some(view().flex_row().flex_wrap().gap_2().children(status.into_iter().map(move |(label, optional, done)| {
-                let mark = match (done, optional) {
-                    (true, _) => "✓",
-                    (false, false) => "○",
-                    (false, true) => "◇",
-                };
-                let shown = if optional { format!("{mark} {label} (optional)") } else { format!("{mark} {label}") };
-                text(shown)
-                    .font_family(MONO)
-                    .text_size(px(12.5))
-                    .text_color(match (done, optional) {
-                        (true, _) => hex(PRESENT),
-                        (false, false) => hexa(0xece6ff, 0.6),
-                        (false, true) => hexa(0xece6ff, 0.35),
-                    })
-            })))
+            Some(
+                view()
+                    .flex_row()
+                    .flex_wrap()
+                    .gap_2()
+                    .children(status.into_iter().map(move |(label, optional, done)| {
+                        let mark = match (done, optional) {
+                            (true, _) => "✓",
+                            (false, false) => "○",
+                            (false, true) => "◇",
+                        };
+                        let shown = if optional {
+                            format!("{mark} {label} (optional)")
+                        } else {
+                            format!("{mark} {label}")
+                        };
+                        text(shown)
+                            .font_family(MONO)
+                            .text_size(px(12.5))
+                            .text_color(match (done, optional) {
+                                (true, _) => hex(PRESENT),
+                                (false, false) => hexa(0xece6ff, 0.6),
+                                (false, true) => hexa(0xece6ff, 0.35),
+                            })
+                    })),
+            )
         }))
         .into_element()
 }
@@ -2620,25 +3153,47 @@ fn goal_view(ui: Ui, size: f32) -> impl IntoElement {
             }
             if line.is_empty() {
                 let missing = d.missing_lines.iter().any(|&(_, mg)| mg == g);
-                runs.push((if missing { "⏎ empty line".into() } else { "\u{a0}".into() }, !missing));
+                runs.push((
+                    if missing {
+                        "⏎ empty line".into()
+                    } else {
+                        "\u{a0}".into()
+                    },
+                    !missing,
+                ));
             }
-            view().flex_row().flex_wrap().children(runs.into_iter().map(move |(t, ok)| {
-                text(t)
-                    .font_family(MONO)
-                    .text_size(px(size))
-                    .line_height(px(size * 1.45))
-                    .font_weight(if ok { FontWeight::NORMAL } else { FontWeight::BOLD })
-                    .text_color(hex(if ok { PRESENT } else { MISSING }))
-            }))
+            view()
+                .flex_row()
+                .flex_wrap()
+                .children(runs.into_iter().map(move |(t, ok)| {
+                    text(t)
+                        .font_family(MONO)
+                        .text_size(px(size))
+                        .line_height(px(size * 1.45))
+                        .font_weight(if ok { FontWeight::NORMAL } else { FontWeight::BOLD })
+                        .text_color(hex(if ok { PRESENT } else { MISSING }))
+                }))
         });
         let summary = view()
             .flex_row()
             .flex_wrap()
             .gap_2()
             .mt(px(6.0))
-            .child(text(format!("✓ {have} in place")).text_size(px(12.0)).text_color(hex(PRESENT)))
-            .child(text(format!("+ {add} to add")).text_size(px(12.0)).text_color(hex(MISSING)))
-            .child(text(format!("✕ {remove} to remove")).text_size(px(12.0)).text_color(hex(0xff8a70)));
+            .child(
+                text(format!("✓ {have} in place"))
+                    .text_size(px(12.0))
+                    .text_color(hex(PRESENT)),
+            )
+            .child(
+                text(format!("+ {add} to add"))
+                    .text_size(px(12.0))
+                    .text_color(hex(MISSING)),
+            )
+            .child(
+                text(format!("✕ {remove} to remove"))
+                    .text_size(px(12.0))
+                    .text_color(hex(0xff8a70)),
+            );
         Some(view().child(view().children(rows)).child(summary))
     })
 }
@@ -2650,7 +3205,12 @@ fn side_panel(level: &'static Level, ui: Ui) -> impl IntoElement {
             .items_start()
             .gap_2()
             .child(view().min_w(px(64.0)).items_start().child(chip(*keys, 0xfff3b0)))
-            .child(text(*what).text_size(px(13.5)).text_color(hexa(0xece6ff, 0.85)).flex_1())
+            .child(
+                text(*what)
+                    .text_size(px(13.5))
+                    .text_color(hexa(0xece6ff, 0.85))
+                    .flex_1(),
+            )
     });
     view()
         .w(px(320.0))
@@ -2660,15 +3220,32 @@ fn side_panel(level: &'static Level, ui: Ui) -> impl IntoElement {
         .bg(hexa(0x0b0820, 0.6))
         .border_1()
         .border_color(hexa(0xc9b8ff, 0.16))
-        .child(text(level.story).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.8)).italic())
-        .child(text("NEW COMMANDS").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(4.0)))
+        .child(
+            text(level.story)
+                .text_size(px(14.0))
+                .line_height(px(20.0))
+                .text_color(hexa(0xece6ff, 0.8))
+                .italic(),
+        )
+        .child(
+            text("NEW COMMANDS")
+                .text_size(px(11.0))
+                .letter_spacing(px(1.5))
+                .text_color(hexa(0xc9b8ff, 0.7))
+                .mt(px(4.0)),
+        )
         .child(view().gap_2().children(teaches))
         .child(lesson_checklist(ui, level.title))
         .child(level.goal_text().map(|_| {
             view()
                 .gap_2()
                 .mt(px(4.0))
-                .child(text("MAKE THE TEXT READ").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)))
+                .child(
+                    text("MAKE THE TEXT READ")
+                        .text_size(px(11.0))
+                        .letter_spacing(px(1.5))
+                        .text_color(hexa(0xc9b8ff, 0.7)),
+                )
                 .child(
                     view()
                         .p(px(10.0))
@@ -2683,42 +3260,77 @@ fn side_panel(level: &'static Level, ui: Ui) -> impl IntoElement {
                         .text_color(hexa(0xece6ff, 0.5)),
                 )
         }))
-        .child((!level.files().is_empty() || !level.want_files().is_empty()).then(|| {
-            let shelf = level.files().iter().map(|(n, _)| *n).collect::<Vec<_>>().join("  ");
-            view()
-                .gap_1()
-                .mt(px(4.0))
-                .child(text("ON THE SHELF").text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)))
-                .child(text(shelf).font_family(MONO).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.8)))
-                .children(level.want_files().iter().map(move |&(name, want)| {
-                    view()
-                        .gap_1()
-                        .mt(px(4.0))
-                        .child(
-                            text(move || {
-                                ui.tick.get();
-                                let done = session_value(|s| s.editor.files.get(name).is_some_and(|f| f == want)).unwrap_or(false);
-                                format!("{} AND WRITE {name}", if done { "✓" } else { "…" })
-                            })
+        .child(
+            (!level.files().is_empty() || !level.want_files().is_empty()).then(|| {
+                let shelf = level
+                    .files()
+                    .iter()
+                    .map(|(n, _)| *n)
+                    .collect::<Vec<_>>()
+                    .join("  ");
+                view()
+                    .gap_1()
+                    .mt(px(4.0))
+                    .child(
+                        text("ON THE SHELF")
                             .text_size(px(11.0))
-                            .letter_spacing(px(1.2))
-                            .text_color(hex(PRESENT)),
-                        )
-                        .child(text(want.to_string()).font_family(MONO).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.75)))
-                }))
-        }))
+                            .letter_spacing(px(1.5))
+                            .text_color(hexa(0xc9b8ff, 0.7)),
+                    )
+                    .child(
+                        text(shelf)
+                            .font_family(MONO)
+                            .text_size(px(12.5))
+                            .text_color(hexa(0xece6ff, 0.8)),
+                    )
+                    .children(level.want_files().iter().map(move |&(name, want)| {
+                        view()
+                            .gap_1()
+                            .mt(px(4.0))
+                            .child(
+                                text(move || {
+                                    ui.tick.get();
+                                    let done = session_value(|s| {
+                                        s.editor.files.get(name).is_some_and(|f| f == want)
+                                    })
+                                    .unwrap_or(false);
+                                    format!("{} AND WRITE {name}", if done { "✓" } else { "…" })
+                                })
+                                .text_size(px(11.0))
+                                .letter_spacing(px(1.2))
+                                .text_color(hex(PRESENT)),
+                            )
+                            .child(
+                                text(want.to_string())
+                                    .font_family(MONO)
+                                    .text_size(px(12.5))
+                                    .text_color(hexa(0xece6ff, 0.75)),
+                            )
+                    }))
+            }),
+        )
         .child((level.goal.is_none() && !level.gems().is_empty()).then(|| {
-            text("Collect every crystal ◆ to clear the isle.").text_size(px(13.0)).text_color(hex(GEM)).mt(px(4.0))
+            text("Collect every crystal ◆ to clear the isle.")
+                .text_size(px(13.0))
+                .text_color(hex(GEM))
+                .mt(px(4.0))
         }))
         .child((!level.bugs().is_empty()).then(|| {
-            text("Squash every bug: land on it. Each command moves them a tile, and they hatch twins every 8.")
-                .text_size(px(13.0))
-                .line_height(px(18.0))
-                .text_color(hex(BUG))
-                .mt(px(4.0))
+            text(
+                "Squash every bug: land on it. Each command moves them a tile, and they hatch twins every 8.",
+            )
+            .text_size(px(13.0))
+            .line_height(px(18.0))
+            .text_color(hex(BUG))
+            .mt(px(4.0))
         }))
         .child(view().flex_1())
-        .child(text(format!("Tip: {}", level.tip)).text_size(px(12.5)).line_height(px(18.0)).text_color(hexa(0xece6ff, 0.55)))
+        .child(
+            text(format!("Tip: {}", level.tip))
+                .text_size(px(12.5))
+                .line_height(px(18.0))
+                .text_color(hexa(0xece6ff, 0.55)),
+        )
         .child(
             text(":h lessons · :e! restart · :q menu · :n skip · :mute")
                 .font_family(MONO)
@@ -2740,19 +3352,36 @@ fn spoiler(solution: String) -> impl IntoElement {
         .py(px(4.0))
         .ml(px(-8.0))
         .rounded(px(6.0))
-        .bg(move || if shown.get() { hexa(GEM, 0.08) } else { hexa(0xffffff, 0.05) })
+        .bg(move || {
+            if shown.get() {
+                hexa(GEM, 0.08)
+            } else {
+                hexa(0xffffff, 0.05)
+            }
+        })
         .cursor_pointer()
         .on_mouse_enter(move |_: &MouseEvent| shown.set(true))
         .on_mouse_leave(move |_: &MouseEvent| shown.set(false))
         .on_press(move || shown.update(|s| *s = !*s))
         .child(
-            text(move || if shown.get() { solution.clone() } else { masked.clone() })
-                .font_family(MONO)
-                .text_size(px(14.0))
-                .text_color(move || if shown.get() { hex(GEM) } else { hexa(GEM, 0.35) }),
+            text(move || {
+                if shown.get() {
+                    solution.clone()
+                } else {
+                    masked.clone()
+                }
+            })
+            .font_family(MONO)
+            .text_size(px(14.0))
+            .text_color(move || if shown.get() { hex(GEM) } else { hexa(GEM, 0.35) }),
         )
         .child(dynamic(move || {
-            (!shown.get()).then(|| text("hover to reveal").text_size(px(11.0)).italic().text_color(hexa(0xffffff, 0.4)))
+            (!shown.get()).then(|| {
+                text("hover to reveal")
+                    .text_size(px(11.0))
+                    .italic()
+                    .text_color(hexa(0xffffff, 0.4))
+            })
         }))
 }
 
@@ -2772,15 +3401,37 @@ fn toolkit_box(chapter: &str) -> Option<View> {
             .bg(hexa(PRESENT, 0.08))
             .border_1()
             .border_color(hexa(PRESENT, 0.35))
-            .child(text("NEW IN YOUR TOOLKIT").text_size(px(11.0)).letter_spacing(px(1.4)).font_weight(FontWeight::BOLD).text_color(hex(PRESENT)))
-            .child(text("Cousins of what this chapter taught. They work from the next isle on.").text_size(px(12.0)).text_color(hexa(0xece6ff, 0.6)))
+            .child(
+                text("NEW IN YOUR TOOLKIT")
+                    .text_size(px(11.0))
+                    .letter_spacing(px(1.4))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(hex(PRESENT)),
+            )
+            .child(
+                text("Cousins of what this chapter taught. They work from the next isle on.")
+                    .text_size(px(12.0))
+                    .text_color(hexa(0xece6ff, 0.6)),
+            )
             .children(kit.iter().map(|(keys, what)| {
                 view()
                     .flex_row()
                     .items_center()
                     .gap_2()
-                    .child(text(*keys).font_family(MONO).font_weight(FontWeight::BOLD).text_size(px(13.0)).text_color(hex(0xffd76b)).min_w(px(120.0)))
-                    .child(text(*what).text_size(px(12.5)).text_color(hexa(0xece6ff, 0.8)).flex_1())
+                    .child(
+                        text(*keys)
+                            .font_family(MONO)
+                            .font_weight(FontWeight::BOLD)
+                            .text_size(px(13.0))
+                            .text_color(hex(0xffd76b))
+                            .min_w(px(120.0)),
+                    )
+                    .child(
+                        text(*what)
+                            .text_size(px(12.5))
+                            .text_color(hexa(0xece6ff, 0.8))
+                            .flex_1(),
+                    )
             })),
     )
 }
@@ -2793,11 +3444,32 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         if !done {
             return None;
         }
-        let (index, keys, stars, par, level, campaign, boss) =
-            session_value(|s| (s.index, format_keys(&s.keys), s.stars(), s.par(), s.level(), s.in_campaign(), is_boss(s))).unwrap();
-        let (took, best_time, drills_left) = with_state(|s| (s.took.unwrap_or(0.0), s.times[index], s.drills.len()));
+        let (index, keys, stars, par, level, campaign, boss) = session_value(|s| {
+            (
+                s.index,
+                format_keys(&s.keys),
+                s.stars(),
+                s.par(),
+                s.level(),
+                s.in_campaign(),
+                is_boss(s),
+            )
+        })
+        .unwrap();
+        let (took, best_time, drills_left) =
+            with_state(|s| (s.took.unwrap_or(0.0), s.times[index], s.drills.len()));
         let count = session_value(|s| s.keys.len()).unwrap();
-        let (habits, trapped) = session_value(|s| (s.coach.spotted.iter().map(|h| h.label.clone()).collect::<Vec<_>>(), s.trapped)).unwrap();
+        let (habits, trapped) = session_value(|s| {
+            (
+                s.coach
+                    .spotted
+                    .iter()
+                    .map(|h| h.label.clone())
+                    .collect::<Vec<_>>(),
+                s.trapped,
+            )
+        })
+        .unwrap();
         let free = session_value(|s| s.free).unwrap_or(false);
         let free_best = with_state(|s| s.free_best[index]);
         let last = campaign && !free && level.title == levels::ENDING;
@@ -2864,7 +3536,7 @@ fn complete_card(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 "⏱ {}{}",
                                 clock(took),
                                 match best_time {
-                                    Some(t) if campaign && !failed && !free => format!("   ·   best {}", clock(t as f64 * 100.0)),
+                                    Some(t) if campaign && !failed && !free => format!("   ·   best {}", clock(f64::from(t) * 100.0)),
                                     _ => String::new(),
                                 }
                             ))

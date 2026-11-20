@@ -1,11 +1,18 @@
 //! Smaller pieces of the screens: the grammar grid, the boss banner on a
 //! chapter's last isle, and the hint card for a half-typed command.
 
-use super::*;
+use super::{
+    Element, EllipseAt, FluentBuilder, FontWeight, IntoElement, LEVELS, MONO, Mode, Motion, PRESENT, Painter,
+    ParentElement, Rc, Styled, TAU, Ui, canvas, chip, dynamic, grammar, hex, hexa, hints, is_boss, px,
+    scroll, session_value, shade, story, text, view, with_state, work,
+};
 
 /// The isle where text objects are taught: hints offer them from there on.
 fn objects_taught(index: usize) -> bool {
-    LEVELS.iter().position(|l| l.title == "Inside Out").is_some_and(|i| index >= i)
+    LEVELS
+        .iter()
+        .position(|l| l.title == "Inside Out")
+        .is_some_and(|i| index >= i)
 }
 
 /// What can follow the keys typed so far, floating over the board.
@@ -20,7 +27,12 @@ pub(crate) fn hint_card(ui: Ui) -> impl IntoElement {
             if pending.is_empty() {
                 return None;
             }
-            hints::hint(&pending, s.editor.in_visual(), s.allowed(), objects_taught(s.index))
+            hints::hint(
+                &pending,
+                s.editor.in_visual(),
+                s.allowed(),
+                objects_taught(s.index),
+            )
         })??;
         let rows = hint.next.into_iter().map(|(keys, what)| {
             view()
@@ -28,8 +40,21 @@ pub(crate) fn hint_card(ui: Ui) -> impl IntoElement {
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .child(view().w(px(80.0)).child(text(keys).font_family(MONO).text_size(px(13.0)).font_weight(FontWeight::BOLD).text_color(hex(0xffd76b))))
-                .child(text(what).text_size(px(12.0)).text_color(hexa(0xece6ff, 0.8)).flex_1())
+                .child(
+                    view().w(px(80.0)).child(
+                        text(keys)
+                            .font_family(MONO)
+                            .text_size(px(13.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(hex(0xffd76b)),
+                    ),
+                )
+                .child(
+                    text(what)
+                        .text_size(px(12.0))
+                        .text_color(hexa(0xece6ff, 0.8))
+                        .flex_1(),
+                )
         });
         Some(
             view()
@@ -43,9 +68,21 @@ pub(crate) fn hint_card(ui: Ui) -> impl IntoElement {
                 .bg(hexa(0x0b0820, 0.92))
                 .border_1()
                 .border_color(hexa(0xffb86b, 0.5))
-                .child(text(hint.title).font_family(MONO).text_size(px(13.0)).font_weight(FontWeight::BOLD).text_color(hex(0xffb86b)).mb(px(4.0)))
+                .child(
+                    text(hint.title)
+                        .font_family(MONO)
+                        .text_size(px(13.0))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(hex(0xffb86b))
+                        .mb(px(4.0)),
+                )
                 .child(view().flex_row().flex_wrap().gap_1().children(rows))
-                .child(text("Esc cancels").text_size(px(11.0)).text_color(hexa(0xffffff, 0.4)).mt(px(4.0))),
+                .child(
+                    text("Esc cancels")
+                        .text_size(px(11.0))
+                        .text_color(hexa(0xffffff, 0.4))
+                        .mt(px(4.0)),
+                ),
         )
     })
 }
@@ -57,7 +94,7 @@ pub(crate) fn boss_banner(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
         ui.scene.get();
         let (boss, color) = session_value(|s| {
             let chapter = story::chapter(s.level().chapter)?;
-            is_boss(s).then(|| (chapter.boss, chapter.theme.stone))
+            is_boss(s).then_some((chapter.boss, chapter.theme.stone))
         })??;
         let flinch = motion.boss.mul(10.0);
         let health = move || {
@@ -80,11 +117,21 @@ pub(crate) fn boss_banner(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                 .bg(hexa(0x05030f, 0.7))
                 .border_1()
                 .border_color(hexa(0xff9a6b, 0.45))
-                .child(canvas(move || draw_monster(color)).w(px(54.0)).h(px(46.0)).bind_translate_x(&flinch))
+                .child(
+                    canvas(move || draw_monster(color))
+                        .w(px(54.0))
+                        .h(px(46.0))
+                        .bind_translate_x(&flinch),
+                )
                 .child(
                     view()
                         .gap_1()
-                        .child(text(boss).text_size(px(14.0)).font_weight(FontWeight::BOLD).text_color(hex(0xff9a6b)))
+                        .child(
+                            text(boss)
+                                .text_size(px(14.0))
+                                .font_weight(FontWeight::BOLD)
+                                .text_color(hex(0xff9a6b)),
+                        )
                         .child(
                             view()
                                 .w(px(160.0))
@@ -92,12 +139,22 @@ pub(crate) fn boss_banner(ui: Ui, motion: Rc<Motion>) -> impl IntoElement {
                                 .rounded(px(4.0))
                                 .bg(hexa(0xffffff, 0.12))
                                 .overflow_hidden()
-                                .child(view().h_full().rounded(px(4.0)).bg(hex(0xff6b5a)).w(move || px(160.0 * health().clamp(0.0, 1.0)))),
+                                .child(
+                                    view()
+                                        .h_full()
+                                        .rounded(px(4.0))
+                                        .bg(hex(0xff6b5a))
+                                        .w(move || px(160.0 * health().clamp(0.0, 1.0))),
+                                ),
                         )
                         .child(
                             text(move || {
                                 let h = health();
-                                if h <= 0.0 { "defeated!".to_string() } else { format!("{:.0}% health: every crystal, bug or fix is a hit", h * 100.0) }
+                                if h <= 0.0 {
+                                    "defeated!".to_string()
+                                } else {
+                                    format!("{:.0}% health: every crystal, bug or fix is a hit", h * 100.0)
+                                }
                             })
                             .text_size(px(11.0))
                             .text_color(hexa(0xece6ff, 0.6)),
@@ -162,17 +219,24 @@ pub(crate) fn grammar_screen(ui: Ui) -> impl IntoElement {
     let used = with_state(|s| s.grammar.clone());
     let total = grammar::VERBS.len() * grammar::NOUNS.len();
     let cell_w = 64.0;
-    let header = view()
-        .flex_row()
-        .items_end()
-        .child(view().w(px(190.0)))
-        .children(grammar::VERBS.iter().map(move |(verb, what)| {
-            view()
-                .w(px(cell_w))
-                .items_center()
-                .child(text(*verb).font_family(MONO).text_size(px(17.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0)))
-                .child(text(*what).text_size(px(10.5)).text_color(hexa(0xece6ff, 0.55)))
-        }));
+    let header =
+        view()
+            .flex_row()
+            .items_end()
+            .child(view().w(px(190.0)))
+            .children(grammar::VERBS.iter().map(move |(verb, what)| {
+                view()
+                    .w(px(cell_w))
+                    .items_center()
+                    .child(
+                        text(*verb)
+                            .font_family(MONO)
+                            .text_size(px(17.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(hex(0xfff3b0)),
+                    )
+                    .child(text(*what).text_size(px(10.5)).text_color(hexa(0xece6ff, 0.55)))
+            }));
     let rows = grammar::NOUNS.iter().map(move |(noun, what)| {
         let used = used.clone();
         view()
@@ -185,7 +249,14 @@ pub(crate) fn grammar_screen(ui: Ui) -> impl IntoElement {
                     .flex_row()
                     .gap_2()
                     .items_center()
-                    .child(text(*noun).font_family(MONO).text_size(px(14.0)).font_weight(FontWeight::BOLD).text_color(hex(0xffd76b)).min_w(px(40.0)))
+                    .child(
+                        text(*noun)
+                            .font_family(MONO)
+                            .text_size(px(14.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(hex(0xffd76b))
+                            .min_w(px(40.0)),
+                    )
                     .child(text(*what).text_size(px(11.5)).text_color(hexa(0xece6ff, 0.55))),
             )
             .children(grammar::VERBS.iter().map(move |(verb, _)| {
@@ -203,10 +274,23 @@ pub(crate) fn grammar_screen(ui: Ui) -> impl IntoElement {
                     .py(px(3.0))
                     .rounded(px(5.0))
                     .items_center()
-                    .bg(if lit { hexa(PRESENT, 0.22) } else { hexa(0xffffff, 0.03) })
+                    .bg(if lit {
+                        hexa(PRESENT, 0.22)
+                    } else {
+                        hexa(0xffffff, 0.03)
+                    })
                     .border_1()
-                    .border_color(if lit { hexa(PRESENT, 0.6) } else { hexa(0xffffff, 0.06) })
-                    .child(text(word).font_family(MONO).text_size(px(12.0)).text_color(if lit { hex(PRESENT) } else { hexa(0xece6ff, 0.22) }))
+                    .border_color(if lit {
+                        hexa(PRESENT, 0.6)
+                    } else {
+                        hexa(0xffffff, 0.06)
+                    })
+                    .child(
+                        text(word)
+                            .font_family(MONO)
+                            .text_size(px(12.0))
+                            .text_color(if lit { hex(PRESENT) } else { hexa(0xece6ff, 0.22) }),
+                    )
             }))
     });
     let count = with_state(|s| s.grammar.len());
@@ -215,7 +299,13 @@ pub(crate) fn grammar_screen(ui: Ui) -> impl IntoElement {
         .items_center()
         .p(px(20.0))
         .gap_3()
-        .child(text("YOUR VIM GRAMMAR").text_size(px(28.0)).font_weight(FontWeight::BLACK).letter_spacing(px(4.0)).text_color(hex(0xfff3b0)))
+        .child(
+            text("YOUR VIM GRAMMAR")
+                .text_size(px(28.0))
+                .font_weight(FontWeight::BLACK)
+                .letter_spacing(px(4.0))
+                .text_color(hex(0xfff3b0)),
+        )
         .child(
             text(
                 "Vim commands are sentences: a verb (an operator) and a noun (a motion or text object). \
@@ -227,7 +317,12 @@ pub(crate) fn grammar_screen(ui: Ui) -> impl IntoElement {
             .line_height(px(20.0))
             .text_color(hexa(0xece6ff, 0.75)),
         )
-        .child(text(format!("{count} of {total} used")).font_family(MONO).text_size(px(15.0)).text_color(hex(PRESENT)))
+        .child(
+            text(format!("{count} of {total} used"))
+                .font_family(MONO)
+                .text_size(px(15.0))
+                .text_color(hex(PRESENT)),
+        )
         .child(
             scroll().flex_1().child(
                 view()
@@ -248,11 +343,13 @@ pub(crate) fn grammar_screen(ui: Ui) -> impl IntoElement {
                 .child(chip("Esc", 0xfff3b0))
                 .child(text("back to the map").text_color(hexa(0xffffff, 0.6)))
                 .child(view().w(px(10.0)))
-                .child(text(move || {
-                    ui.tick.get();
-                    "Try a dim one on your next isle: it lights up the moment you use it.".to_string()
-                })
-                .text_size(px(12.5))
-                .text_color(hexa(0xffffff, 0.45))),
+                .child(
+                    text(move || {
+                        ui.tick.get();
+                        "Try a dim one on your next isle: it lights up the moment you use it.".to_string()
+                    })
+                    .text_size(px(12.5))
+                    .text_color(hexa(0xffffff, 0.45)),
+                ),
         )
 }

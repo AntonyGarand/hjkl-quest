@@ -18,7 +18,13 @@ pub fn drill(title: &str, which: usize) -> Option<Level> {
         return None;
     }
     let (marked, keys) = all[which % all.len()];
-    if keys.contains(":r") || keys.contains(":e") || keys.contains(":w") || keys.contains('!') || keys.contains("<C-g>") || keys.contains(":reg") {
+    if keys.contains(":r")
+        || keys.contains(":e")
+        || keys.contains(":w")
+        || keys.contains('!')
+        || keys.contains("<C-g>")
+        || keys.contains(":reg")
+    {
         return None;
     }
     let mut start = pos(0, 0);
@@ -73,7 +79,10 @@ pub fn drill(title: &str, which: usize) -> Option<Level> {
         title: leak(format!("Review · {title}")),
         story: "A drill from an isle you cleared a while ago. Do it from memory: the par is \
                 the example's own keys.",
-        teaches: crate::levels::LEVELS.iter().find(|l| l.title == title).map_or(&[], |l| l.teaches),
+        teaches: crate::levels::LEVELS
+            .iter()
+            .find(|l| l.title == title)
+            .map_or(&[], |l| l.teaches),
         unlock: "",
         map: leak(format!("\n{text}")),
         marks: leak(format!("\n{marks}")),
@@ -114,14 +123,22 @@ mod tests {
         for (i, isle) in LEVELS.iter().enumerate() {
             let mut any = false;
             for which in 0..examples::examples(isle.title).len() {
-                let Some(level) = drill(isle.title, which) else { continue };
+                let Some(level) = drill(isle.title, which) else {
+                    continue;
+                };
                 let level: &'static Level = Box::leak(Box::new(level));
                 let mut s = Session::custom(level, i.max(LEVELS.len() - 1));
                 assert!(!s.complete, "{}: starts complete", level.title);
                 for k in parse_keys(level.solution) {
                     s.press(k);
                 }
-                assert!(s.cleared(), "{} #{which}: {} doesn't clear it:\n{}", level.title, level.solution, s.editor.text());
+                assert!(
+                    s.cleared(),
+                    "{} #{which}: {} doesn't clear it:\n{}",
+                    level.title,
+                    level.solution,
+                    s.editor.text()
+                );
                 any = true;
             }
             isles += any as usize;

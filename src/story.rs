@@ -49,9 +49,18 @@ pub static CHAPTERS: &[Chapter] = &[
               long ago; out here we walk with h, j, k and l. Try it, I'll wait.",
         boss: "The Sheep King",
         taunt: "Baa! You'll never cross my field one step at a time!",
-        theme: Theme { sky: [0x14244a, 0x2f4f7a, 0x6a7fa8], grass: 0x4c8f57, stone: 0x5f6f93, weather: Weather::Fireflies, day: true },
+        theme: Theme {
+            sky: [0x14244a, 0x2f4f7a, 0x6a7fa8],
+            grass: 0x4c8f57,
+            stone: 0x5f6f93,
+            weather: Weather::Fireflies,
+            day: true,
+        },
         toolkit: &[
-            ("H  M  L", "to the top, middle or bottom line of the screen (3H: the third line)"),
+            (
+                "H  M  L",
+                "to the top, middle or bottom line of the screen (3H: the third line)",
+            ),
             ("+  -", "down or up a line, straight onto its first letter"),
         ],
         unlock: "HML+-",
@@ -62,7 +71,13 @@ pub static CHAPTERS: &[Chapter] = &[
               folk who hop word to word get home for supper.",
         boss: "The Troll of the Last Plank",
         taunt: "Nobody crosses my bridge without knowing where the words end!",
-        theme: Theme { sky: [0x1d1438, 0x4a2b5e, 0xb0606a], grass: 0x5d8a4a, stone: 0x7a6a5a, weather: Weather::Leaves, day: true },
+        theme: Theme {
+            sky: [0x1d1438, 0x4a2b5e, 0xb0606a],
+            grass: 0x5d8a4a,
+            stone: 0x7a6a5a,
+            weather: Weather::Leaves,
+            day: true,
+        },
         toolkit: &[
             ("{n}|", "to column n of the line: 1| is the very start"),
             ("_", "the first letter, like ^; 3_ is that of two lines down"),
@@ -75,7 +90,13 @@ pub static CHAPTERS: &[Chapter] = &[
               letter, to the next paragraph.",
         boss: "The Gargoyle",
         taunt: "Stone and silence. Find me if you can, little light.",
-        theme: Theme { sky: NIGHT, grass: 0x4c7a6a, stone: 0x6a6f8a, weather: Weather::Motes, day: false },
+        theme: Theme {
+            sky: NIGHT,
+            grass: 0x4c7a6a,
+            stone: 0x6a6f8a,
+            weather: Weather::Motes,
+            day: false,
+        },
         toolkit: &[
             ("ge  gE", "back to the end of the word before"),
             ("g_", "the last letter of the line, before any spaces"),
@@ -89,11 +110,23 @@ pub static CHAPTERS: &[Chapter] = &[
               % finds the other half, / finds anything at all.",
         boss: "The Clockwork Spider",
         taunt: "Tick, tick. I hide in the brackets. Search all you like!",
-        theme: Theme { sky: [0x0d1a1f, 0x1f3a40, 0x3a5a52], grass: 0x3f7a6a, stone: 0x5a6a7a, weather: Weather::Embers, day: false },
+        theme: Theme {
+            sky: [0x0d1a1f, 0x1f3a40, 0x3a5a52],
+            grass: 0x3f7a6a,
+            stone: 0x5a6a7a,
+            weather: Weather::Embers,
+            day: false,
+        },
         toolkit: &[
-            ("g*  g#", "like * and #, but finds the word inside longer words too"),
+            (
+                "g*  g#",
+                "like * and #, but finds the word inside longer words too",
+            ),
             ("{n}%", "n percent through the file: 50% is the middle"),
-            ("/\\d\\+", "patterns: . any letter, * repeats, \\d a digit, \\w a word letter, \\| or"),
+            (
+                "/\\d\\+",
+                "patterns: . any letter, * repeats, \\d a digit, \\w a word letter, \\| or",
+            ),
         ],
         unlock: "",
     },
@@ -103,7 +136,13 @@ pub static CHAPTERS: &[Chapter] = &[
               An operator and a motion: that's a whole sentence in vim.",
         boss: "The Rust Golem",
         taunt: "My words are welded on. You can't delete what you can't reach!",
-        theme: Theme { sky: [0x1c120c, 0x4a2a1a, 0x8a4a2a], grass: 0x6a7a3a, stone: 0x7a5f4a, weather: Weather::Embers, day: false },
+        theme: Theme {
+            sky: [0x1c120c, 0x4a2a1a, 0x8a4a2a],
+            grass: 0x6a7a3a,
+            stone: 0x7a5f4a,
+            weather: Weather::Embers,
+            day: false,
+        },
         toolkit: &[
             ("s  S", "change one character, or the whole line"),
             ("dis  das", "a sentence, as a text object"),
@@ -117,11 +156,20 @@ pub static CHAPTERS: &[Chapter] = &[
               Esc is the way out, always.",
         boss: "The Ink Wraith",
         taunt: "I blot. I smudge. Every copy you make, I'll copy twice!",
-        theme: Theme { sky: [0x120d1f, 0x2a1f3f, 0x4a3a5a], grass: 0x5a6a4a, stone: 0x6a5a7a, weather: Weather::Motes, day: false },
+        theme: Theme {
+            sky: [0x120d1f, 0x2a1f3f, 0x4a3a5a],
+            grass: 0x5a6a4a,
+            stone: 0x6a5a7a,
+            weather: Weather::Motes,
+            day: false,
+        },
         toolkit: &[
             ("gi", "insert again right where you last stopped"),
             ("gp  gP", "put, and land just after what you put"),
-            ("Ctrl-r {reg}", "in insert mode: type out a register (Ctrl-r \" the last yank)"),
+            (
+                "Ctrl-r {reg}",
+                "in insert mode: type out a register (Ctrl-r \" the last yank)",
+            ),
         ],
         unlock: "",
     },
@@ -131,7 +179,13 @@ pub static CHAPTERS: &[Chapter] = &[
               with a text object, or light a stretch of sky in visual mode.",
         boss: "The Comet Eater",
         taunt: "I swallow stars inside their brackets. Come and fetch them!",
-        theme: Theme { sky: [0x05061a, 0x141a40, 0x2a2060], grass: 0x3a6a6a, stone: 0x4a5a8a, weather: Weather::Motes, day: false },
+        theme: Theme {
+            sky: [0x05061a, 0x141a40, 0x2a2060],
+            grass: 0x3a6a6a,
+            stone: 0x4a5a8a,
+            weather: Weather::Motes,
+            day: false,
+        },
         toolkit: &[
             ("gv", "select the last selection again"),
             ("o", "in visual mode: hop to the other end of the selection"),
@@ -146,12 +200,24 @@ pub static CHAPTERS: &[Chapter] = &[
               once: one :s and every line obeys.",
         boss: "The Storm Hydra",
         taunt: "Cut one head and two grow back! Unless... you get them all at once.",
-        theme: Theme { sky: [0x1a2030, 0x3a4a60, 0x7a8aa0], grass: 0x5a7a6a, stone: 0x6a7a90, weather: Weather::Rain, day: true },
+        theme: Theme {
+            sky: [0x1a2030, 0x3a4a60, 0x7a8aa0],
+            grass: 0x5a7a6a,
+            stone: 0x6a7a90,
+            weather: Weather::Rain,
+            day: true,
+        },
         toolkit: &[
             ("&  g&", "repeat the last :s on this line, or on every line"),
-            (":s/\\(\\w\\+\\) \\(\\w\\+\\)/\\2 \\1/", "groups, put back in any order with \\1 \\2"),
+            (
+                ":s/\\(\\w\\+\\) \\(\\w\\+\\)/\\2 \\1/",
+                "groups, put back in any order with \\1 \\2",
+            ),
             (":s/a/b/ | s/c/d/", "| runs one command after another"),
-            (":s/\\w\\+/\\u&/g", "\\u \\U \\l \\L change the case of what's put"),
+            (
+                ":s/\\w\\+/\\u&/g",
+                "\\u \\U \\l \\L change the case of what's put",
+            ),
         ],
         unlock: "&",
     },
@@ -161,7 +227,13 @@ pub static CHAPTERS: &[Chapter] = &[
               step into another file and back.",
         boss: "The Scroll Moth",
         taunt: "Munch munch. Which file was I in? Which file are YOU in?",
-        theme: Theme { sky: [0x1f1608, 0x4a3818, 0x8a6a38], grass: 0x7a7a4a, stone: 0x8a7a5a, weather: Weather::Motes, day: true },
+        theme: Theme {
+            sky: [0x1f1608, 0x4a3818, 0x8a6a38],
+            grass: 0x7a7a4a,
+            stone: 0x8a7a5a,
+            weather: Weather::Motes,
+            day: true,
+        },
         toolkit: &[
             (":r !cat FILE", "read in a command's output"),
             (":2,4w FILE", "write only some lines to a file"),
@@ -174,7 +246,13 @@ pub static CHAPTERS: &[Chapter] = &[
               Marks work the same way, for places.",
         boss: "The Vault Mimic",
         taunt: "Is it your register or mine? Choose the wrong one and lose it all!",
-        theme: Theme { sky: [0x0a0a14, 0x1a1a2a, 0x2a2a3a], grass: 0x4a5a4a, stone: 0x5a5a6a, weather: Weather::Motes, day: false },
+        theme: Theme {
+            sky: [0x0a0a14, 0x1a1a2a, 0x2a2a3a],
+            grass: 0x4a5a4a,
+            stone: 0x5a5a6a,
+            weather: Weather::Motes,
+            day: false,
+        },
         toolkit: &[
             ("\"0p", "register 0 keeps the last yank, even after deletes"),
             ("\"_dd", "the black hole: delete without touching your registers"),
@@ -189,7 +267,13 @@ pub static CHAPTERS: &[Chapter] = &[
               boring bits.",
         boss: "The Wind-up King",
         taunt: "I repeat myself. I repeat myself. Can YOU repeat yourself?",
-        theme: Theme { sky: [0x14100a, 0x3a2a14, 0x6a4a1a], grass: 0x6a6a3a, stone: 0x8a7040, weather: Weather::Embers, day: false },
+        theme: Theme {
+            sky: [0x14100a, 0x3a2a14, 0x6a4a1a],
+            grass: 0x6a6a3a,
+            stone: 0x8a7040,
+            weather: Weather::Embers,
+            day: false,
+        },
         toolkit: &[
             ("@@", "play the last macro again"),
             ("5@a", "play it five times"),
@@ -203,7 +287,13 @@ pub static CHAPTERS: &[Chapter] = &[
               Careful on the edges.",
         boss: "The Terrace Dragon",
         taunt: "MY SCALES ARE ALL CAPITALS AND YOU CANNOT LOWER THEM!",
-        theme: Theme { sky: [0x10202a, 0x2a5a5a, 0x8ab08a], grass: 0x5a9a4a, stone: 0x6a8a6a, weather: Weather::Leaves, day: true },
+        theme: Theme {
+            sky: [0x10202a, 0x2a5a5a, 0x8ab08a],
+            grass: 0x5a9a4a,
+            stone: 0x6a8a6a,
+            weather: Weather::Leaves,
+            day: true,
+        },
         toolkit: &[
             ("gUU  guu  g~~", "change the case of the whole line"),
             (">ip  <ip", "shift a whole paragraph"),
@@ -217,7 +307,13 @@ pub static CHAPTERS: &[Chapter] = &[
               the next match is always one gn away.",
         boss: "The Frost Wyrm",
         taunt: "Every column frozen. Every line the same. Edit them one by one, wisp!",
-        theme: Theme { sky: [0x0a1a2a, 0x2a4a6a, 0x8ab0d0], grass: 0xa0b8c8, stone: 0x7a90b0, weather: Weather::Snow, day: true },
+        theme: Theme {
+            sky: [0x0a1a2a, 0x2a4a6a, 0x8ab0d0],
+            grass: 0xa0b8c8,
+            stone: 0x7a90b0,
+            weather: Weather::Snow,
+            day: true,
+        },
         toolkit: &[
             ("Ctrl-v $ A", "append at the end of every line, however long"),
             ("o  O", "in a block: hop to the other corners"),
@@ -231,7 +327,13 @@ pub static CHAPTERS: &[Chapter] = &[
               Everything you learned on the isles works the same.",
         boss: "The Legacy Code",
         taunt: "I have been here since before you were born. Nobody dares refactor me.",
-        theme: Theme { sky: [0x101828, 0x283850, 0x506078], grass: 0x4c7a57, stone: 0x5a6a80, weather: Weather::Rain, day: false },
+        theme: Theme {
+            sky: [0x101828, 0x283850, 0x506078],
+            grass: 0x4c7a57,
+            stone: 0x5a6a80,
+            weather: Weather::Rain,
+            day: false,
+        },
         toolkit: &[
             ("* :s//new/", "an empty pattern is the last search"),
             (":%s/\\<x\\>/size/g", "\\< and \\> keep it to whole words"),
@@ -244,7 +346,13 @@ pub static CHAPTERS: &[Chapter] = &[
               Whatever's behind it, you're ready. I'll keep the ferry warm.",
         boss: "The Archivist",
         taunt: "Every line, every file, in order. Or not at all.",
-        theme: Theme { sky: [0x0a0614, 0x2a1a3a, 0x5a3a5a], grass: 0x5a6a5a, stone: 0x6a5a7a, weather: Weather::Motes, day: false },
+        theme: Theme {
+            sky: [0x0a0614, 0x2a1a3a, 0x5a3a5a],
+            grass: 0x5a6a5a,
+            stone: 0x6a5a7a,
+            weather: Weather::Motes,
+            day: false,
+        },
         toolkit: &[
             (":g/pat/norm A;", "run normal-mode keys on every matching line"),
             (":v/pat/d", "delete every line that doesn't match"),
@@ -258,7 +366,13 @@ pub static CHAPTERS: &[Chapter] = &[
               command you finish is one beat, and the reef dances to it.",
         boss: "The Metronome Crab",
         taunt: "Tick! Tock! Every move you make, I make one too!",
-        theme: Theme { sky: [0x061a2a, 0x0f3a4a, 0x2a6a6a], grass: 0x3a8a7a, stone: 0x5a6a8a, weather: Weather::Motes, day: false },
+        theme: Theme {
+            sky: [0x061a2a, 0x0f3a4a, 0x2a6a6a],
+            grass: 0x3a8a7a,
+            stone: 0x5a6a8a,
+            weather: Weather::Motes,
+            day: false,
+        },
         toolkit: &[],
         unlock: "",
     },
@@ -268,7 +382,13 @@ pub static CHAPTERS: &[Chapter] = &[
               vim, and the shortest way through.",
         boss: "The Hydra of Many Modes",
         taunt: "Cut off one head and two keybindings grow back!",
-        theme: Theme { sky: [0x1a0a14, 0x3a1424, 0x6a2a2a], grass: 0x6a5a3a, stone: 0x7a4a4a, weather: Weather::Embers, day: false },
+        theme: Theme {
+            sky: [0x1a0a14, 0x3a1424, 0x6a2a2a],
+            grass: 0x6a5a3a,
+            stone: 0x7a4a4a,
+            weather: Weather::Embers,
+            day: false,
+        },
         toolkit: &[],
         unlock: "",
     },
@@ -278,7 +398,13 @@ pub static CHAPTERS: &[Chapter] = &[
               keystrokes. Vim always has another way.",
         boss: "The Magistrate of Keys",
         taunt: "No arrows. No deletes. No excuses.",
-        theme: Theme { sky: [0x0e1424, 0x24304a, 0x5a6a8a], grass: 0x6a8aa0, stone: 0x6a6a8a, weather: Weather::Snow, day: false },
+        theme: Theme {
+            sky: [0x0e1424, 0x24304a, 0x5a6a8a],
+            grass: 0x6a8aa0,
+            stone: 0x6a6a8a,
+            weather: Weather::Snow,
+            day: false,
+        },
         toolkit: &[],
         unlock: "",
     },
@@ -320,17 +446,55 @@ pub struct Region {
 }
 
 pub static REGIONS: &[Region] = &[
-    Region { name: "The Shallows", topic: "moving around", chapters: &["The Meadow", "The Word Bridges", "The Tower"], tint: 0x3f8f7a },
-    Region { name: "The Searching Straits", topic: "finding things", chapters: &["The Machine"], tint: 0x3f6fa8 },
-    Region { name: "The Mending Coast", topic: "changing text", chapters: &["The Workshop", "The Library", "The Observatory"], tint: 0x8f6a3f },
-    Region { name: "The Ex Highlands", topic: "the command line", chapters: &["The Summit", "The Scriptorium"], tint: 0x6a5aa8 },
-    Region { name: "The Power Isles", topic: "registers, macros and blocks", chapters: &["The Vaults", "The Clockwork", "The Terraces", "The Glacier"], tint: 0xa85a7a },
-    Region { name: "The Mainland", topic: "real files", chapters: &["The Mainland", "The Archive"], tint: 0x5a8f4a },
-    Region { name: "Beyond the Map", topic: "challenges, after the ending", chapters: &["The Rhythm Reef", "The Gauntlet", "The Trials"], tint: 0xa8483f },
+    Region {
+        name: "The Shallows",
+        topic: "moving around",
+        chapters: &["The Meadow", "The Word Bridges", "The Tower"],
+        tint: 0x3f8f7a,
+    },
+    Region {
+        name: "The Searching Straits",
+        topic: "finding things",
+        chapters: &["The Machine"],
+        tint: 0x3f6fa8,
+    },
+    Region {
+        name: "The Mending Coast",
+        topic: "changing text",
+        chapters: &["The Workshop", "The Library", "The Observatory"],
+        tint: 0x8f6a3f,
+    },
+    Region {
+        name: "The Ex Highlands",
+        topic: "the command line",
+        chapters: &["The Summit", "The Scriptorium"],
+        tint: 0x6a5aa8,
+    },
+    Region {
+        name: "The Power Isles",
+        topic: "registers, macros and blocks",
+        chapters: &["The Vaults", "The Clockwork", "The Terraces", "The Glacier"],
+        tint: 0xa85a7a,
+    },
+    Region {
+        name: "The Mainland",
+        topic: "real files",
+        chapters: &["The Mainland", "The Archive"],
+        tint: 0x5a8f4a,
+    },
+    Region {
+        name: "Beyond the Map",
+        topic: "challenges, after the ending",
+        chapters: &["The Rhythm Reef", "The Gauntlet", "The Trials"],
+        tint: 0xa8483f,
+    },
 ];
 
 /// The region chapter `label` lies in (its index in `REGIONS`).
 pub fn region_of(label: &str) -> usize {
     let name = label.split_once(" · ").map_or(label, |(_, n)| n);
-    REGIONS.iter().position(|r| r.chapters.contains(&name)).unwrap_or(0)
+    REGIONS
+        .iter()
+        .position(|r| r.chapters.contains(&name))
+        .unwrap_or(0)
 }

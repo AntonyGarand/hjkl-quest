@@ -20,7 +20,11 @@ pub fn requirements(title: &str) -> &'static [(&'static str, &'static str)] {
         "Punctuation Pass" => &[("W, B or E", "W|B|E"), ("E", "?E")],
         "Edge of the World" => &[("0 or ^", "0|^"), ("$", "$")],
         "Long Jumps" => &[("{n}G", "⁰G"), ("gg", "?gg")],
-        "Seek and Find" => &[("f{c} or t{c}", "f·|t·"), ("; or ,", ";|,"), ("F{c} or T{c}", "?F·|T·")],
+        "Seek and Find" => &[
+            ("f{c} or t{c}", "f·|t·"),
+            ("; or ,", ";|,"),
+            ("F{c} or T{c}", "?F·|T·"),
+        ],
         "Bug Hunt" => &[("a count and f: 3fb", "⁰f·|⁰t·|⁰F·|⁰T·")],
         "Infestation" => &[("/text", "/·…"), ("n or N", "n|N")],
         "What's in a Name" => &[("* or :s", "*|#|:…s/·…")],
@@ -32,7 +36,10 @@ pub fn requirements(title: &str) -> &'static [(&'static str, &'static str)] {
         "Tide Clock" => &[("$, | or a count", "$|⁰…|")],
         "Name Swap" => &[("one command for all: :%s or a macro", ":%s/·…|:…s/·…|@·")],
         "Count Off" => &[("a macro or :norm", "@·|:…norm…"), ("Ctrl-a", "<C-a>")],
-        "Tag Soup" => &[("a pattern or a tag object", ":…s/·…|·it|·at"), ("> or :>", ">…|:…>…")],
+        "Tag Soup" => &[
+            ("a pattern or a tag object", ":…s/·…|·it|·at"),
+            ("> or :>", ">…|:…>…"),
+        ],
         "No Arrows" => &[("a jump: f, +, $, w or /", "f·|t·|+|-|$|w|e|b|/·…|G")],
         "Thin Ice" => &[(":v, :g! or a line range", ":…v/…|:…g!/…|:⁰…s/…")],
         "No Delete" => &[(":s, c or s", ":…s/·…|c·…|s")],
@@ -42,7 +49,14 @@ pub fn requirements(title: &str) -> &'static [(&'static str, &'static str)] {
         "Search Party" => &[("/text", "/·…"), ("n or N", "n|N")],
         "Looking Back" => &[("?text", "?·…"), ("Ctrl-o", "<C-o>")],
         "Chomp" => &[("x or X", "x|X"), ("r{c}", "r·"), ("~", "?~")],
-        "Demolition" => &[("dd", "dd"), ("D", "?D"), ("d{motion}", "dw|de|db|dW|dE|dB|d$|d0|d^|dj|dk|dG|dgg|dt·|df·|dT·|dF·|d}|d{|d%|d⁰…")],
+        "Demolition" => &[
+            ("dd", "dd"),
+            ("D", "?D"),
+            (
+                "d{motion}",
+                "dw|de|db|dW|dE|dB|d$|d0|d^|dj|dk|dG|dgg|dt·|df·|dT·|dF·|d}|d{|d%|d⁰…",
+            ),
+        ],
         "Change of Heart" => &[("c{motion}", "c·|c··"), ("C", "?C")],
         "Insert Coin" => &[("I or A", "I|A"), ("o or O", "o|O"), ("i or a", "?i|a")],
         "Copycat" => &[("y{motion}, yy or Y", "y·…|Y"), ("p or P", "p|P")],
@@ -55,7 +69,11 @@ pub fn requirements(title: &str) -> &'static [(&'static str, &'static str)] {
         "The Refactor" => &[(":s", ":…s/·…"), ("c{motion}", "?c·…")],
         "Scrolls" => &[(":r FILE", ":r ·…|:read ·…")],
         "Copy Desk" => &[(":w FILE", ":…w ·…|:…write ·…")],
-        "Two Scrolls" => &[(":e FILE", ":e ·…|:edit ·…"), (":e #", ":e #|:edit #"), (":w", "?:w|:write")],
+        "Two Scrolls" => &[
+            (":e FILE", ":e ·…|:edit ·…"),
+            (":e #", ":e #|:edit #"),
+            (":w", "?:w|:write"),
+        ],
         "Named Vaults" => &[("\"x, a named register", "\"··…")],
         "Waymarks" => &[("m{a-z}", "m·"), ("`{a} or '{a}", "…`·|…'·")],
         "Tally Marks" => &[("Ctrl-a or Ctrl-x", "<C-a>|<C-x>")],
@@ -120,7 +138,10 @@ pub fn missing(title: &str, used: &[String]) -> Vec<&'static str> {
 /// Each requirement of isle `title`: its label, whether it's optional, and
 /// whether `used` has it.
 pub fn status(title: &str, used: &[String]) -> Vec<(&'static str, bool, bool)> {
-    requirements(title).iter().map(|(label, p)| (*label, optional(p), used.iter().any(|t| satisfied(p, t)))).collect()
+    requirements(title)
+        .iter()
+        .map(|(label, p)| (*label, optional(p), used.iter().any(|t| satisfied(p, t))))
+        .collect()
 }
 
 #[cfg(test)]
@@ -131,7 +152,11 @@ mod tests {
     #[test]
     fn every_isle_has_requirements() {
         for level in LEVELS {
-            assert!(requirements(level.title).iter().any(|(_, p)| !optional(p)), "{} has no requirements", level.title);
+            assert!(
+                requirements(level.title).iter().any(|(_, p)| !optional(p)),
+                "{} has no requirements",
+                level.title
+            );
         }
     }
 

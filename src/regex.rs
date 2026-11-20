@@ -23,7 +23,12 @@ enum Node {
     Group(Box<Node>, Option<usize>),
     Alt(Vec<Node>),
     Concat(Vec<Node>),
-    Repeat { node: Box<Node>, min: usize, max: usize, greedy: bool },
+    Repeat {
+        node: Box<Node>,
+        min: usize,
+        max: usize,
+        greedy: bool,
+    },
 }
 
 /// A character class item: an inclusive range, or a named class.
@@ -102,7 +107,7 @@ fn tokenize(pat: &str) -> Vec<Tok> {
     let mut very = false;
     let mut i = 0;
     // Whether `^` here starts a branch, so anchors.
-    let starts_branch = |out: &Vec<Tok>| matches!(out.last(), None | Some(Tok::Open(_)) | Some(Tok::Bar));
+    let starts_branch = |out: &Vec<Tok>| matches!(out.last(), None | Some(Tok::Open(_) | Tok::Bar));
     while i < chars.len() {
         let c = chars[i];
         // In very magic mode these need no backslash.
@@ -173,7 +178,8 @@ fn tokenize(pat: &str) -> Vec<Tok> {
                     '1'..='9' => out.push(Tok::Backref(n as usize - '0' as usize)),
                     't' => out.push(Tok::Lit('\t')),
                     'n' | 'r' => out.push(Tok::Lit('\n')),
-                    'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'a' | 'A' | 'l' | 'L' | 'u' | 'U' | 'x' | 'X' | 'h' | 'H' => out.push(Tok::Named(n)),
+                    'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'a' | 'A' | 'l' | 'L' | 'u' | 'U' | 'x' | 'X'
+                    | 'h' | 'H' => out.push(Tok::Named(n)),
                     other => out.push(Tok::Lit(other)),
                 }
                 continue;
@@ -206,7 +212,9 @@ fn tokenize(pat: &str) -> Vec<Tok> {
 
 /// `\{n,m}` after the brace: the token and the characters it used.
 fn brace(rest: &[char]) -> (Option<Tok>, usize) {
-    let Some(close) = rest.iter().position(|&c| c == '}') else { return (None, 0) };
+    let Some(close) = rest.iter().position(|&c| c == '}') else {
+        return (None, 0);
+    };
     let mut body: String = rest[..close].iter().collect();
     // `\{…\}` closes with a backslash in magic mode.
     if body.ends_with('\\') {
@@ -214,7 +222,13 @@ fn brace(rest: &[char]) -> (Option<Tok>, usize) {
     }
     let lazy = body.starts_with('-');
     let body = body.trim_start_matches('-');
-    let num = |s: &str| if s.is_empty() { None } else { s.parse::<usize>().ok() };
+    let num = |s: &str| {
+        if s.is_empty() {
+            None
+        } else {
+            s.parse::<usize>().ok()
+        }
+    };
     let (min, max) = match body.split_once(',') {
         Some((a, b)) => (num(a).unwrap_or(0), num(b).unwrap_or(usize::MAX)),
         None if body.is_empty() => (0, usize::MAX),
@@ -245,7 +259,8 @@ fn class(rest: &[char]) -> Option<(Tok, usize)> {
             let n = *rest.get(i + 1)?;
             i += 2;
             match n {
-                'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'a' | 'A' | 'l' | 'L' | 'u' | 'U' | 'x' | 'X' | 'h' | 'H' => {
+                'd' | 'D' | 'w' | 'W' | 's' | 'S' | 'a' | 'A' | 'l' | 'L' | 'u' | 'U' | 'x' | 'X' | 'h'
+                | 'H' => {
                     items.push(RangeTok::Named(n));
                     continue;
                 }
@@ -279,7 +294,11 @@ impl Parser {
             self.at += 1;
             branches.push(self.concat());
         }
-        if branches.len() == 1 { branches.pop().unwrap() } else { Node::Alt(branches) }
+        if branches.len() == 1 {
+            branches.pop().unwrap()
+        } else {
+            Node::Alt(branches)
+        }
     }
 
     fn concat(&mut self) -> Node {
@@ -291,10 +310,13 @@ impl Parser {
                 Tok::Any => Node::Any,
                 Tok::Named(c) => Node::Class(vec![Range::Named(c)], false),
                 Tok::Class(items, neg) => Node::Class(
-                    items.into_iter().map(|r| match r {
-                        RangeTok::Span(a, b) => Range::Span(a, b),
-                        RangeTok::Named(c) => Range::Named(c),
-                    }).collect(),
+                    items
+                        .into_iter()
+                        .map(|r| match r {
+                            RangeTok::Span(a, b) => Range::Span(a, b),
+                            RangeTok::Named(c) => Range::Named(c),
+                        })
+                        .collect(),
                     neg,
                 ),
                 Tok::Start => Node::Start,
@@ -327,7 +349,11 @@ impl Parser {
             self.at += 1;
             items.push(self.multi(atom));
         }
-        if items.len() == 1 { items.pop().unwrap() } else { Node::Concat(items) }
+        if items.len() == 1 {
+            items.pop().unwrap()
+        } else {
+            Node::Concat(items)
+        }
     }
 
     fn multi(&mut self, atom: Node) -> Node {
@@ -339,7 +365,12 @@ impl Parser {
             _ => return atom,
         };
         self.at += 1;
-        Node::Repeat { node: Box::new(atom), min, max, greedy }
+        Node::Repeat {
+            node: Box::new(atom),
+            min,
+            max,
+            greedy,
+        }
     }
 }
 
@@ -354,7 +385,11 @@ type K<'a> = &'a mut dyn FnMut(usize, &mut State) -> bool;
 
 impl Regex {
     pub fn new(pat: &str) -> Regex {
-        let mut p = Parser { toks: tokenize(pat), at: 0, groups: 0 };
+        let mut p = Parser {
+            toks: tokenize(pat),
+            at: 0,
+            groups: 0,
+        };
         let mut root = p.alt();
         // A stray `\)`: the rest is taken literally.
         while p.at < p.toks.len() {
@@ -370,7 +405,11 @@ impl Regex {
         if col > line.len() {
             return None;
         }
-        let mut st = State { groups: [None; 10], zs: None, ze: None };
+        let mut st = State {
+            groups: [None; 10],
+            zs: None,
+            ze: None,
+        };
         let mut found = None;
         let m = Matcher { line, icase };
         m.node(&self.root, col, &mut st, &mut |end, st| {
@@ -416,7 +455,11 @@ impl Matcher<'_> {
         match n {
             Node::Char(c) => one(line.get(pos).is_some_and(|&x| self.same(x, *c)), st, k),
             Node::Any => one(pos < line.len(), st, k),
-            Node::Class(ranges, neg) => one(line.get(pos).is_some_and(|&x| self.class_has(ranges, x) != *neg), st, k),
+            Node::Class(ranges, neg) => one(
+                line.get(pos).is_some_and(|&x| self.class_has(ranges, x) != *neg),
+                st,
+                k,
+            ),
             Node::Start => pos == 0 && k(pos, st),
             Node::End => pos == line.len() && k(pos, st),
             Node::WordStart => {
@@ -431,15 +474,25 @@ impl Matcher<'_> {
             }
             Node::Zs | Node::Ze => {
                 let zs = matches!(n, Node::Zs);
-                let saved = if zs { st.zs.replace(pos) } else { st.ze.replace(pos) };
+                let saved = if zs {
+                    st.zs.replace(pos)
+                } else {
+                    st.ze.replace(pos)
+                };
                 if k(pos, st) {
                     return true;
                 }
-                if zs { st.zs = saved } else { st.ze = saved }
+                if zs {
+                    st.zs = saved;
+                } else {
+                    st.ze = saved;
+                }
                 false
             }
             Node::Backref(g) => {
-                let Some((a, b)) = st.groups[*g] else { return k(pos, st) };
+                let Some((a, b)) = st.groups[*g] else {
+                    return k(pos, st);
+                };
                 let len = b - a;
                 if pos + len > line.len() || !(0..len).all(|i| self.same(line[pos + i], line[a + i])) {
                     return false;
@@ -461,7 +514,12 @@ impl Matcher<'_> {
             }
             Node::Alt(branches) => branches.iter().any(|b| self.node(b, pos, st, &mut *k)),
             Node::Concat(items) => self.seq(items, pos, st, k),
-            Node::Repeat { node, min, max, greedy } => self.repeat(node, *min, *max, *greedy, 0, pos, st, k),
+            Node::Repeat {
+                node,
+                min,
+                max,
+                greedy,
+            } => self.repeat(node, *min, *max, *greedy, 0, pos, st, k),
         }
     }
 
@@ -473,12 +531,26 @@ impl Matcher<'_> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn repeat(&self, n: &Node, min: usize, max: usize, greedy: bool, count: usize, pos: usize, st: &mut State, k: K) -> bool {
+    fn repeat(
+        &self,
+        n: &Node,
+        min: usize,
+        max: usize,
+        greedy: bool,
+        count: usize,
+        pos: usize,
+        st: &mut State,
+        k: K,
+    ) -> bool {
         let more = |st: &mut State, k: K| {
             count < max
                 && self.node(n, pos, st, &mut |p, st| {
                     // A match of nothing ends the repeat (or it would loop).
-                    if p == pos { count + 1 >= min && k(p, st) } else { self.repeat(n, min, max, greedy, count + 1, p, st, k) }
+                    if p == pos {
+                        count + 1 >= min && k(p, st)
+                    } else {
+                        self.repeat(n, min, max, greedy, count + 1, p, st, k)
+                    }
                 })
         };
         if greedy {
@@ -504,7 +576,7 @@ pub fn expand(rep: &str, line: &[char], m: &Match) -> Vec<char> {
             None => out.push(c),
         }
     };
-    let group = |g: usize| m.groups[g].map(|(a, b)| line[a..b].to_vec()).unwrap_or_default();
+    let group = |g: usize| m.groups[g].map_or_default(|(a, b)| line[a..b].to_vec());
     let mut chars = rep.chars();
     while let Some(c) = chars.next() {
         match c {
@@ -541,7 +613,9 @@ mod tests {
 
     fn find(pat: &str, text: &str) -> Option<(usize, usize)> {
         let line: Vec<char> = text.chars().collect();
-        Regex::new(pat).find_from(&line, 0, false).map(|m| (m.start, m.end))
+        Regex::new(pat)
+            .find_from(&line, 0, false)
+            .map(|m| (m.start, m.end))
     }
 
     fn sub(pat: &str, rep: &str, text: &str) -> String {

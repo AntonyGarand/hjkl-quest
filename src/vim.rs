@@ -91,30 +91,31 @@ pub fn parse_keys(s: &str) -> Vec<Key> {
     let mut i = 0;
     while i < chars.len() {
         if chars[i] == '<'
-            && let Some(end) = chars[i..].iter().position(|&c| c == '>') {
-                let name: String = chars[i + 1..i + end].iter().collect();
-                let key = match name.to_ascii_lowercase().as_str() {
-                    "esc" => Some(Key::Esc),
-                    "cr" | "enter" => Some(Key::Enter),
-                    "bs" => Some(Key::Backspace),
-                    "c-r" => Some(Key::CtrlR),
-                    "c-a" => Some(Key::CtrlA),
-                    "c-x" => Some(Key::CtrlX),
-                    "c-v" => Some(Key::CtrlV),
-                    "tab" | "c-i" => Some(Key::Tab),
-                    "c-d" => Some(Key::CtrlD),
-                    "c-o" => Some(Key::CtrlO),
-                    "c-g" => Some(Key::CtrlG),
-                    "space" => Some(Key::Char(' ')),
-                    "lt" => Some(Key::Char('<')),
-                    _ => None,
-                };
-                if let Some(key) = key {
-                    keys.push(key);
-                    i += end + 1;
-                    continue;
-                }
+            && let Some(end) = chars[i..].iter().position(|&c| c == '>')
+        {
+            let name: String = chars[i + 1..i + end].iter().collect();
+            let key = match name.to_ascii_lowercase().as_str() {
+                "esc" => Some(Key::Esc),
+                "cr" | "enter" => Some(Key::Enter),
+                "bs" => Some(Key::Backspace),
+                "c-r" => Some(Key::CtrlR),
+                "c-a" => Some(Key::CtrlA),
+                "c-x" => Some(Key::CtrlX),
+                "c-v" => Some(Key::CtrlV),
+                "tab" | "c-i" => Some(Key::Tab),
+                "c-d" => Some(Key::CtrlD),
+                "c-o" => Some(Key::CtrlO),
+                "c-g" => Some(Key::CtrlG),
+                "space" => Some(Key::Char(' ')),
+                "lt" => Some(Key::Char('<')),
+                _ => None,
+            };
+            if let Some(key) = key {
+                keys.push(key);
+                i += end + 1;
+                continue;
             }
+        }
         keys.push(Key::Char(chars[i]));
         i += 1;
     }
@@ -122,7 +123,7 @@ pub fn parse_keys(s: &str) -> Vec<Key> {
 }
 
 pub fn format_keys(keys: &[Key]) -> String {
-    keys.iter().map(|k| k.to_string()).collect()
+    keys.iter().map(ToString::to_string).collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -139,12 +140,16 @@ pub const fn pos(row: usize, col: usize) -> Pos {
 pub enum Mode {
     Normal,
     Insert,
-    Visual { line: bool },
+    Visual {
+        line: bool,
+    },
     /// Visual block mode (`Ctrl-v`): a rectangle of columns.
     Block,
     /// Replace mode (`R`): typing overwrites.
     Replace,
-    Command { search: bool },
+    Command {
+        search: bool,
+    },
     /// `:s///c`: asking whether to replace each match.
     Confirm,
 }
@@ -396,7 +401,11 @@ impl Editor {
     }
 
     pub fn text(&self) -> String {
-        self.lines.iter().map(|l| l.iter().collect::<String>()).collect::<Vec<_>>().join("\n")
+        self.lines
+            .iter()
+            .map(|l| l.iter().collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// The keys of the command being typed (vim's `showcmd`).
@@ -439,8 +448,14 @@ impl Editor {
     /// The selected rectangle in visual block mode: rows, columns, and
     /// whether it runs to the end of every line (`$`).
     pub fn block_rect(&self) -> (usize, usize, usize, usize, bool) {
-        let (r0, r1) = (self.anchor.row.min(self.cursor.row), self.anchor.row.max(self.cursor.row));
-        let (c0, c1) = (self.anchor.col.min(self.cursor.col), self.anchor.col.max(self.cursor.col));
+        let (r0, r1) = (
+            self.anchor.row.min(self.cursor.row),
+            self.anchor.row.max(self.cursor.row),
+        );
+        let (c0, c1) = (
+            self.anchor.col.min(self.cursor.col),
+            self.anchor.col.max(self.cursor.col),
+        );
         (r0, r1, c0, c1, self.want == usize::MAX)
     }
 
@@ -449,7 +464,9 @@ impl Editor {
         if name == '"' {
             return Some(self.register.text.clone());
         }
-        self.registers.get(&name.to_ascii_lowercase()).map(|r| r.text.clone())
+        self.registers
+            .get(&name.to_ascii_lowercase())
+            .map(|r| r.text.clone())
     }
 
     pub fn in_count(&self) -> bool {
@@ -461,7 +478,7 @@ impl Editor {
     }
 
     pub fn line_len(&self, row: usize) -> usize {
-        self.lines.get(row).map_or(0, |l| l.len())
+        self.lines.get(row).map_or(0, Vec::len)
     }
 
     pub fn char_at(&self, p: Pos) -> Option<char> {
@@ -484,7 +501,9 @@ impl Editor {
 
     fn first_non_blank(&self, row: usize) -> usize {
         let line = &self.lines[row];
-        line.iter().position(|c| !c.is_whitespace()).unwrap_or(line.len().saturating_sub(1))
+        line.iter()
+            .position(|c| !c.is_whitespace())
+            .unwrap_or(line.len().saturating_sub(1))
     }
 
     fn snapshot(&mut self) {
@@ -495,7 +514,10 @@ impl Editor {
         if self.line_undo.as_ref().map(|(r, _)| *r) != Some(row) {
             self.line_undo = Some((row, self.lines[row].clone()));
         }
-        self.undo.push(Snapshot { lines: self.lines.clone(), cursor: self.cursor });
+        self.undo.push(Snapshot {
+            lines: self.lines.clone(),
+            cursor: self.cursor,
+        });
         self.redo.clear();
     }
 
@@ -540,7 +562,11 @@ impl Editor {
     /// The register a put reads: `"x`, or the unnamed one.
     fn read_reg(&self) -> Register {
         match self.active_reg {
-            Some(c) if c != '"' => self.registers.get(&c.to_ascii_lowercase()).cloned().unwrap_or_default(),
+            Some(c) if c != '"' => self
+                .registers
+                .get(&c.to_ascii_lowercase())
+                .cloned()
+                .unwrap_or_default(),
             _ => self.register.clone(),
         }
     }
@@ -556,10 +582,11 @@ impl Editor {
         let mut ok = true;
         for &k in keys {
             if let Outcome::Bell(msg) = self.feed(k)
-                && !msg.is_empty() {
-                    ok = false;
-                    break;
-                }
+                && !msg.is_empty()
+            {
+                ok = false;
+                break;
+            }
         }
         self.depth -= 1;
         ok
@@ -574,9 +601,10 @@ impl Editor {
     /// Takes one key.
     pub fn feed(&mut self, key: Key) -> Outcome {
         if self.depth == 0
-            && let Some((_, keys)) = &mut self.macro_rec {
-                keys.push(key);
-            }
+            && let Some((_, keys)) = &mut self.macro_rec
+        {
+            keys.push(key);
+        }
         if let Some(rec) = &mut self.recording {
             rec.push(key);
         }
@@ -592,11 +620,13 @@ impl Editor {
             self.last_visual = visual_before;
         }
         // A change ends when we are back in normal mode with nothing pending.
-        if self.mode == Mode::Normal && self.pending.is_empty()
+        if self.mode == Mode::Normal
+            && self.pending.is_empty()
             && let Some(rec) = self.recording.take()
-                && !self.replaying {
-                    self.last_change = rec;
-                }
+            && !self.replaying
+        {
+            self.last_change = rec;
+        }
         outcome
     }
 
@@ -621,7 +651,13 @@ impl Editor {
             let Some(text) = self.register_text(name).filter(|t| !t.is_empty()) else {
                 return Outcome::Bell(format!("Register {name} is empty"));
             };
-            let linewise = if name == '"' { self.register.linewise } else { self.registers.get(&name.to_ascii_lowercase()).is_some_and(|r| r.linewise) };
+            let linewise = if name == '"' {
+                self.register.linewise
+            } else {
+                self.registers
+                    .get(&name.to_ascii_lowercase())
+                    .is_some_and(|r| r.linewise)
+            };
             let text = if linewise { format!("{text}\n") } else { text };
             for c in text.chars() {
                 if c == '\n' {
@@ -645,28 +681,30 @@ impl Editor {
             Key::Esc => {
                 self.marks.insert('^', self.cursor);
                 if let Some(b) = self.block_insert.take()
-                    && self.cursor.row == b.row && self.cursor.col >= b.start {
-                        let typed: Vec<char> = self.lines[b.row][b.start..self.cursor.col].to_vec();
-                        for row in b.rows.clone() {
-                            let len = self.line_len(row);
-                            let col = if b.to_end { len } else { b.col };
-                            if len < col {
-                                if !b.pad {
-                                    continue;
-                                }
-                                self.lines[row].resize(col, ' ');
+                    && self.cursor.row == b.row
+                    && self.cursor.col >= b.start
+                {
+                    let typed: Vec<char> = self.lines[b.row][b.start..self.cursor.col].to_vec();
+                    for row in b.rows.clone() {
+                        let len = self.line_len(row);
+                        let col = if b.to_end { len } else { b.col };
+                        if len < col {
+                            if !b.pad {
+                                continue;
                             }
-                            for (k, &c) in typed.iter().enumerate() {
-                                self.lines[row].insert(col + k, c);
-                            }
+                            self.lines[row].resize(col, ' ');
                         }
-                        self.changed();
-                        self.mode = Mode::Normal;
-                        self.cursor = pos(b.row, b.start);
-                        self.clamp();
-                        self.want = self.cursor.col;
-                        return Outcome::Ok;
+                        for (k, &c) in typed.iter().enumerate() {
+                            self.lines[row].insert(col + k, c);
+                        }
                     }
+                    self.changed();
+                    self.mode = Mode::Normal;
+                    self.cursor = pos(b.row, b.start);
+                    self.clamp();
+                    self.want = self.cursor.col;
+                    return Outcome::Ok;
+                }
                 self.mode = Mode::Normal;
                 if self.cursor.col > 0 {
                     self.cursor.col -= 1;
@@ -780,7 +818,14 @@ impl Editor {
                 self.cmdline.push(c);
                 Outcome::Ok
             }
-            Key::CtrlR | Key::CtrlA | Key::CtrlX | Key::CtrlV | Key::Tab | Key::CtrlD | Key::CtrlO | Key::CtrlG => Outcome::Ok,
+            Key::CtrlR
+            | Key::CtrlA
+            | Key::CtrlX
+            | Key::CtrlV
+            | Key::Tab
+            | Key::CtrlD
+            | Key::CtrlO
+            | Key::CtrlG => Outcome::Ok,
             Key::Enter => {
                 self.mode = Mode::Normal;
                 let line = std::mem::take(&mut self.cmdline);
@@ -821,7 +866,7 @@ impl Editor {
     fn parse_addr<'a>(&self, s: &'a str) -> Result<(Option<i64>, &'a str), String> {
         let cur = self.cursor.row as i64;
         let last = self.lines.len() as i64 - 1;
-        let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let digits: String = s.chars().take_while(char::is_ascii_digit).collect();
         let (mut row, mut rest) = if !digits.is_empty() {
             (Some(digits.parse::<i64>().unwrap_or(0) - 1), &s[digits.len()..])
         } else if let Some(r) = s.strip_prefix('.') {
@@ -839,16 +884,21 @@ impl Editor {
         };
         while let Some(sign) = rest.chars().next().filter(|c| *c == '+' || *c == '-') {
             let after = &rest[1..];
-            let n: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
-            let by = if n.is_empty() { 1 } else { n.parse::<i64>().unwrap_or(0) };
+            let n: String = after.chars().take_while(char::is_ascii_digit).collect();
+            let by = if n.is_empty() {
+                1
+            } else {
+                n.parse::<i64>().unwrap_or(0)
+            };
             let base = row.unwrap_or(cur);
             row = Some(if sign == '+' { base + by } else { base - by });
             rest = &after[n.len()..];
         }
         if let Some(r) = row
-            && (r < -1 || r > last) {
-                return Err("E16: Invalid range".into());
-            }
+            && (r < -1 || r > last)
+        {
+            return Err("E16: Invalid range".into());
+        }
         Ok((row, rest))
     }
 
@@ -900,8 +950,16 @@ impl Editor {
         let mut chars = line.chars().peekable();
         while let Some(c) = chars.next() {
             let current = parts.last_mut().unwrap();
-            let name: String = current.trim_start().trim_start_matches(|c: char| !c.is_ascii_alphabetic()).chars().take_while(|c| c.is_ascii_alphabetic()).collect();
-            let takes_rest = matches!(name.as_str(), "g" | "global" | "v" | "vglobal" | "norm" | "normal");
+            let name: String = current
+                .trim_start()
+                .trim_start_matches(|c: char| !c.is_ascii_alphabetic())
+                .chars()
+                .take_while(char::is_ascii_alphabetic)
+                .collect();
+            let takes_rest = matches!(
+                name.as_str(),
+                "g" | "global" | "v" | "vglobal" | "norm" | "normal"
+            );
             if c == '\\' && chars.peek() == Some(&'|') {
                 current.push('\\');
                 current.push(chars.next().unwrap());
@@ -942,8 +1000,12 @@ impl Editor {
             }
             return Outcome::Ok;
         }
-        let name: String = rest.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
-        let name = if name.is_empty() { rest.chars().next().map(String::from).unwrap_or_default() } else { name };
+        let name: String = rest.chars().take_while(char::is_ascii_alphabetic).collect();
+        let name = if name.is_empty() {
+            rest.chars().next().map_or_default(String::from)
+        } else {
+            name
+        };
         let arg = &rest[name.len()..];
         let (a, b) = range.unwrap_or((cur, cur));
         match name.as_str() {
@@ -1009,7 +1071,11 @@ impl Editor {
                 } else {
                     self.lines.drain(a..=b);
                     // Where the lines go, once they are out.
-                    let at = if dest > b as i64 { (dest + 1) as usize - n } else { (dest + 1) as usize };
+                    let at = if dest > b as i64 {
+                        (dest + 1) as usize - n
+                    } else {
+                        (dest + 1) as usize
+                    };
                     if let Some(targets) = &mut self.g_targets {
                         for t in targets.iter_mut() {
                             let t1 = if *t > b { *t - n } else { *t };
@@ -1044,7 +1110,7 @@ impl Editor {
                     let len = self.lines.len();
                     self.run_normal_at(row, &keys);
                     let delta = self.lines.len() as i64 - len as i64;
-                    for r in rows.iter_mut() {
+                    for r in &mut rows {
                         *r = (*r as i64 + delta).max(0) as usize;
                     }
                 }
@@ -1073,7 +1139,9 @@ impl Editor {
                 self.last_search = Some(pat.clone());
                 let (a, b) = range.unwrap_or((0, self.lines.len() - 1));
                 let icase = self.icase(&pat);
-                let targets: Vec<usize> = (a..=b).filter(|&r| find_all(&pat, &self.lines[r], icase).is_empty() == invert).collect();
+                let targets: Vec<usize> = (a..=b)
+                    .filter(|&r| find_all(&pat, &self.lines[r], icase).is_empty() == invert)
+                    .collect();
                 if targets.is_empty() {
                     return Outcome::Bell(format!("Pattern not found: {pat}"));
                 }
@@ -1082,20 +1150,30 @@ impl Editor {
                 self.quiet += 1;
                 let outer = self.g_targets.replace(targets);
                 loop {
-                    let Some(row) = self.g_targets.as_mut().and_then(|t| if t.is_empty() { None } else { Some(t.remove(0)) }) else { break };
+                    let Some(row) = self
+                        .g_targets
+                        .as_mut()
+                        .and_then(|t| if t.is_empty() { None } else { Some(t.remove(0)) })
+                    else {
+                        break;
+                    };
                     if row >= self.lines.len() {
                         continue;
                     }
                     self.cursor = pos(row, 0);
                     let len = self.lines.len();
                     let structural = {
-                        let n: String = sub.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
-                        matches!(n.as_str(), "d" | "de" | "del" | "delete" | "m" | "mo" | "move" | "t" | "co" | "copy")
+                        let n: String = sub.chars().take_while(char::is_ascii_alphabetic).collect();
+                        matches!(
+                            n.as_str(),
+                            "d" | "de" | "del" | "delete" | "m" | "mo" | "move" | "t" | "co" | "copy"
+                        )
                     };
                     if let Outcome::Bell(msg) = self.ex_line(&sub)
-                        && !msg.starts_with("Pattern not found") {
-                            break;
-                        }
+                        && !msg.starts_with("Pattern not found")
+                    {
+                        break;
+                    }
                     if !structural {
                         let delta = self.lines.len() as i64 - len as i64;
                         if let Some(t) = &mut self.g_targets {
@@ -1164,7 +1242,11 @@ impl Editor {
                 self.alternate = Some(here);
                 let text = self.files.get(&target).cloned();
                 let new = text.is_none();
-                self.lines = text.unwrap_or_default().split('\n').map(|l| l.chars().collect()).collect();
+                self.lines = text
+                    .unwrap_or_default()
+                    .split('\n')
+                    .map(|l| l.chars().collect())
+                    .collect();
                 self.mode = Mode::Normal;
                 self.cursor = self.cursors.get(&target).copied().unwrap_or_default();
                 self.clamp();
@@ -1173,12 +1255,24 @@ impl Editor {
                 self.redo.clear();
                 self.line_undo = None;
                 self.changed();
-                Outcome::Info(if new { format!("\"{target}\" [New]") } else { format!("\"{target}\" {}L", self.lines.len()) })
+                Outcome::Info(if new {
+                    format!("\"{target}\" [New]")
+                } else {
+                    format!("\"{target}\" {}L", self.lines.len())
+                })
             }
             "reg" | "registers" | "di" | "display" => {
                 let show = |t: &str| {
-                    let t: String = t.replace('\n', "^J").chars().map(|c| if c.is_control() { '^' } else { c }).collect();
-                    if t.chars().count() > 18 { format!("{}…", t.chars().take(18).collect::<String>()) } else { t }
+                    let t: String = t
+                        .replace('\n', "^J")
+                        .chars()
+                        .map(|c| if c.is_control() { '^' } else { c })
+                        .collect();
+                    if t.chars().count() > 18 {
+                        format!("{}…", t.chars().take(18).collect::<String>())
+                    } else {
+                        t
+                    }
                 };
                 let mut out = Vec::new();
                 if !self.register.text.is_empty() {
@@ -1192,12 +1286,20 @@ impl Editor {
                         out.push(format!("\"{name} {}", show(text)));
                     }
                 }
-                if out.is_empty() { Outcome::Info("All registers are empty".into()) } else { Outcome::Info(out.join("   ")) }
+                if out.is_empty() {
+                    Outcome::Info("All registers are empty".into())
+                } else {
+                    Outcome::Info(out.join("   "))
+                }
             }
             "w" | "write" if !arg.trim().is_empty() => {
                 let name = arg.trim().to_string();
                 let (a, b) = range.unwrap_or((0, self.lines.len() - 1));
-                let text = self.lines[a..=b].iter().map(|l| l.iter().collect::<String>()).collect::<Vec<_>>().join("\n");
+                let text = self.lines[a..=b]
+                    .iter()
+                    .map(|l| l.iter().collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 let n = b - a + 1;
                 self.files.insert(name.clone(), text);
                 Outcome::Info(format!("\"{name}\" {n}L written"))
@@ -1239,7 +1341,11 @@ impl Editor {
                 Outcome::Ok
             }
             "j" | "join" => {
-                let b = if range.is_some_and(|(x, y)| x != y) { b } else { (a + 1).min(self.lines.len() - 1) };
+                let b = if range.is_some_and(|(x, y)| x != y) {
+                    b
+                } else {
+                    (a + 1).min(self.lines.len() - 1)
+                };
                 if b == a {
                     return Outcome::Bell(String::new());
                 }
@@ -1292,12 +1398,14 @@ impl Editor {
             self.lines[row] = out;
             last = Some(row);
         }
-        let Some(row) = last else { return Outcome::Bell(format!("Pattern not found: {pat}")) };
+        let Some(row) = last else {
+            return Outcome::Bell(format!("Pattern not found: {pat}"));
+        };
         // A `\r` in the replacement splits lines.
         let mut split: Vec<Vec<char>> = Vec::new();
         let mut cursor_row = row;
         for (r, line) in std::mem::take(&mut self.lines).into_iter().enumerate() {
-            let parts: Vec<Vec<char>> = line.split(|c| *c == '\n').map(|p| p.to_vec()).collect();
+            let parts: Vec<Vec<char>> = line.split(|c| *c == '\n').map(<[char]>::to_vec).collect();
             if r <= row {
                 cursor_row += parts.len() - 1;
             }
@@ -1343,7 +1451,11 @@ impl Editor {
                 }
             } else {
                 let n = line.iter().take(SHIFT).take_while(|c| **c == ' ').count();
-                let n = if n == 0 && line.first() == Some(&'\t') { 1 } else { n };
+                let n = if n == 0 && line.first() == Some(&'\t') {
+                    1
+                } else {
+                    n
+                };
                 line.drain(..n);
             }
         }
@@ -1359,14 +1471,22 @@ impl Editor {
                 self.clamp();
                 return Outcome::Ok;
             }
-            return if had { Outcome::Ok } else { Outcome::Bell(String::new()) };
+            return if had {
+                Outcome::Ok
+            } else {
+                Outcome::Bell(String::new())
+            };
         }
         if self.pending.is_empty() && self.recording.is_none() && self.mode == Mode::Normal {
             self.recording = Some(vec![key]);
         }
         self.pending.push(key);
         let keys = self.pending.clone();
-        let result = if self.in_visual() { self.run_visual(&keys) } else { self.run_normal(&keys) };
+        let result = if self.in_visual() {
+            self.run_visual(&keys)
+        } else {
+            self.run_normal(&keys)
+        };
         match result {
             Err(Parse::Incomplete) => Outcome::Ok,
             Err(Parse::Invalid) => {
@@ -1390,7 +1510,12 @@ impl Editor {
         let mut n: Option<usize> = None;
         while let Some(Key::Char(c)) = keys.get(*i) {
             if c.is_ascii_digit() && (*c != '0' || n.is_some()) {
-                n = Some(n.unwrap_or(0).saturating_mul(10).saturating_add(c.to_digit(10).unwrap() as usize).min(9999));
+                n = Some(
+                    n.unwrap_or(0)
+                        .saturating_mul(10)
+                        .saturating_add(c.to_digit(10).unwrap() as usize)
+                        .min(9999),
+                );
                 *i += 1;
             } else {
                 break;
@@ -1400,14 +1525,35 @@ impl Editor {
     }
 
     /// Parses a motion at `keys[i..]`; `Ok(None)` when the key is no motion.
-    fn parse_motion(&mut self, keys: &[Key], i: usize, count: Option<usize>) -> Result<Option<(Motion, usize)>, Parse> {
+    fn parse_motion(
+        &mut self,
+        keys: &[Key],
+        i: usize,
+        count: Option<usize>,
+    ) -> Result<Option<(Motion, usize)>, Parse> {
         let Some(&Key::Char(c)) = keys.get(i) else {
-            return if i >= keys.len() { Err(Parse::Incomplete) } else { Ok(None) };
+            return if i >= keys.len() {
+                Err(Parse::Incomplete)
+            } else {
+                Ok(None)
+            };
         };
         let n = count.unwrap_or(1);
         let cur = self.cursor;
-        let m = |to: Pos, kind: MotionKind| Motion { to, kind, keeps_want: true, want_end: false, jump: false };
-        let jm = |to: Pos, kind: MotionKind| Motion { to, kind, keeps_want: true, want_end: false, jump: true };
+        let m = |to: Pos, kind: MotionKind| Motion {
+            to,
+            kind,
+            keeps_want: true,
+            want_end: false,
+            jump: false,
+        };
+        let jm = |to: Pos, kind: MotionKind| Motion {
+            to,
+            kind,
+            keeps_want: true,
+            want_end: false,
+            jump: true,
+        };
         let motion = match c {
             'h' => m(pos(cur.row, cur.col.saturating_sub(n)), MotionKind::Exclusive),
             'l' | ' ' => {
@@ -1427,13 +1573,25 @@ impl Editor {
                     cur.row.saturating_sub(n)
                 };
                 let col = self.want.min(self.last_col(row));
-                Motion { to: pos(row, col), kind: MotionKind::Linewise, keeps_want: false, want_end: false, jump: false }
+                Motion {
+                    to: pos(row, col),
+                    kind: MotionKind::Linewise,
+                    keeps_want: false,
+                    want_end: false,
+                    jump: false,
+                }
             }
             '0' => m(pos(cur.row, 0), MotionKind::Exclusive),
             '^' => m(pos(cur.row, self.first_non_blank(cur.row)), MotionKind::Exclusive),
             '$' => {
                 let row = (cur.row + n - 1).min(self.lines.len() - 1);
-                Motion { to: pos(row, self.last_col(row)), kind: MotionKind::Inclusive, keeps_want: true, want_end: true, jump: false }
+                Motion {
+                    to: pos(row, self.last_col(row)),
+                    kind: MotionKind::Inclusive,
+                    keeps_want: true,
+                    want_end: true,
+                    jump: false,
+                }
             }
             'w' | 'W' => {
                 let mut p = cur;
@@ -1458,15 +1616,29 @@ impl Editor {
             }
             'G' => {
                 let row = count.map_or(self.lines.len() - 1, |n| n.max(1).min(self.lines.len()) - 1);
-                Motion { to: pos(row, self.first_non_blank(row)), kind: MotionKind::Linewise, keeps_want: true, want_end: false, jump: true }
+                Motion {
+                    to: pos(row, self.first_non_blank(row)),
+                    kind: MotionKind::Linewise,
+                    keeps_want: true,
+                    want_end: false,
+                    jump: true,
+                }
             }
             'g' => {
-                let Some(&next) = keys.get(i + 1) else { return Err(Parse::Incomplete) };
+                let Some(&next) = keys.get(i + 1) else {
+                    return Err(Parse::Incomplete);
+                };
                 match next {
                     Key::Char('g') => {
                         let row = count.map_or(0, |n| n.max(1).min(self.lines.len()) - 1);
                         return Ok(Some((
-                            Motion { to: pos(row, self.first_non_blank(row)), kind: MotionKind::Linewise, keeps_want: true, want_end: false, jump: true },
+                            Motion {
+                                to: pos(row, self.first_non_blank(row)),
+                                kind: MotionKind::Linewise,
+                                keeps_want: true,
+                                want_end: false,
+                                jump: true,
+                            },
                             i + 2,
                         )));
                     }
@@ -1486,7 +1658,17 @@ impl Editor {
                     // g* and g#: the word under the cursor, also inside longer words.
                     Key::Char(s @ ('*' | '#')) => {
                         let word = self.word_under(cur).ok_or(Parse::Invalid)?;
-                        self.last_search = Some(word.chars().flat_map(|c| if "\\.*[~^$/".contains(c) { vec!['\\', c] } else { vec![c] }).collect());
+                        self.last_search = Some(
+                            word.chars()
+                                .flat_map(|c| {
+                                    if "\\.*[~^$/".contains(c) {
+                                        vec!['\\', c]
+                                    } else {
+                                        vec![c]
+                                    }
+                                })
+                                .collect(),
+                        );
                         self.search_back = s == '#';
                         let mut p = cur;
                         for _ in 0..n {
@@ -1498,11 +1680,19 @@ impl Editor {
                 }
             }
             'f' | 'F' | 't' | 'T' => {
-                let Some(&target) = keys.get(i + 1) else { return Err(Parse::Incomplete) };
-                let Key::Char(target) = target else { return Err(Parse::Invalid) };
+                let Some(&target) = keys.get(i + 1) else {
+                    return Err(Parse::Incomplete);
+                };
+                let Key::Char(target) = target else {
+                    return Err(Parse::Invalid);
+                };
                 self.last_find = Some((c, target));
                 let to = self.find(c, target, n, false).ok_or(Parse::Invalid)?;
-                let kind = if c == 'f' || c == 't' { MotionKind::Inclusive } else { MotionKind::Exclusive };
+                let kind = if c == 'f' || c == 't' {
+                    MotionKind::Inclusive
+                } else {
+                    MotionKind::Exclusive
+                };
                 return Ok(Some((m(to, kind), i + 2)));
             }
             ';' | ',' => {
@@ -1518,17 +1708,30 @@ impl Editor {
                     kind
                 };
                 let to = self.find(kind, target, n, true).ok_or(Parse::Invalid)?;
-                let mk = if kind == 'f' || kind == 't' { MotionKind::Inclusive } else { MotionKind::Exclusive };
+                let mk = if kind == 'f' || kind == 't' {
+                    MotionKind::Inclusive
+                } else {
+                    MotionKind::Exclusive
+                };
                 m(to, mk)
             }
             // {n}%: that far through the file, in percent.
             '%' if count.is_some() => {
                 let n = n.min(100);
                 let row = ((n * self.lines.len()).div_ceil(100)).max(1) - 1;
-                Motion { to: pos(row, self.first_non_blank(row)), kind: MotionKind::Linewise, keeps_want: true, want_end: false, jump: true }
+                Motion {
+                    to: pos(row, self.first_non_blank(row)),
+                    kind: MotionKind::Linewise,
+                    keeps_want: true,
+                    want_end: false,
+                    jump: true,
+                }
             }
             '%' => jm(self.match_pair(cur).ok_or(Parse::Invalid)?, MotionKind::Inclusive),
-            '|' => m(pos(cur.row, (n - 1).min(self.last_col(cur.row))), MotionKind::Exclusive),
+            '|' => m(
+                pos(cur.row, (n - 1).min(self.last_col(cur.row))),
+                MotionKind::Exclusive,
+            ),
             '_' | '+' | '-' => {
                 let row = match c {
                     '_' => cur.row + n - 1,
@@ -1538,7 +1741,13 @@ impl Editor {
                 if row >= self.lines.len() {
                     return Err(Parse::Invalid);
                 }
-                Motion { to: pos(row, self.first_non_blank(row)), kind: MotionKind::Linewise, keeps_want: true, want_end: false, jump: false }
+                Motion {
+                    to: pos(row, self.first_non_blank(row)),
+                    kind: MotionKind::Linewise,
+                    keeps_want: true,
+                    want_end: false,
+                    jump: false,
+                }
             }
             'H' | 'M' | 'L' => {
                 let last = self.lines.len() - 1;
@@ -1547,29 +1756,43 @@ impl Editor {
                     'L' => last.saturating_sub(n - 1),
                     _ => last / 2,
                 };
-                Motion { to: pos(row, self.first_non_blank(row)), kind: MotionKind::Linewise, keeps_want: true, want_end: false, jump: true }
+                Motion {
+                    to: pos(row, self.first_non_blank(row)),
+                    kind: MotionKind::Linewise,
+                    keeps_want: true,
+                    want_end: false,
+                    jump: true,
+                }
             }
             '(' | ')' => {
                 let starts = self.sentence_starts();
                 let mut p = cur;
                 for _ in 0..n {
                     p = if c == ')' {
-                        match starts.iter().find(|&&s| s > p) {
-                            Some(&s) => s,
-                            None => {
-                                let row = self.lines.len() - 1;
-                                pos(row, self.last_col(row))
-                            }
+                        if let Some(&s) = starts.iter().find(|&&s| s > p) {
+                            s
+                        } else {
+                            let row = self.lines.len() - 1;
+                            pos(row, self.last_col(row))
                         }
                     } else {
-                        starts.iter().rev().find(|&&s| s < p).copied().unwrap_or(pos(0, 0))
+                        starts
+                            .iter()
+                            .rev()
+                            .find(|&&s| s < p)
+                            .copied()
+                            .unwrap_or(pos(0, 0))
                     };
                 }
                 jm(p, MotionKind::Exclusive)
             }
             '`' | '\'' => {
-                let Some(&next) = keys.get(i + 1) else { return Err(Parse::Incomplete) };
-                let Key::Char(name) = next else { return Err(Parse::Invalid) };
+                let Some(&next) = keys.get(i + 1) else {
+                    return Err(Parse::Incomplete);
+                };
+                let Key::Char(name) = next else {
+                    return Err(Parse::Invalid);
+                };
                 let name = if name == '`' { '\'' } else { name };
                 let at = *self.marks.get(&name).ok_or(Parse::Invalid)?;
                 let row = at.row.min(self.lines.len() - 1);
@@ -1629,7 +1852,11 @@ impl Editor {
         }
         self.cursor = motion.to;
         if motion.keeps_want {
-            self.want = if motion.want_end { usize::MAX } else { motion.to.col };
+            self.want = if motion.want_end {
+                usize::MAX
+            } else {
+                motion.to.col
+            };
         }
         self.clamp();
     }
@@ -1643,8 +1870,12 @@ impl Editor {
             self.active_reg = None;
             return Ok((count, i));
         }
-        let Some(&r) = keys.get(i + 1) else { return Err(Parse::Incomplete) };
-        let Key::Char(r) = r else { return Err(Parse::Invalid) };
+        let Some(&r) = keys.get(i + 1) else {
+            return Err(Parse::Incomplete);
+        };
+        let Key::Char(r) = r else {
+            return Err(Parse::Invalid);
+        };
         if !Self::valid_register(r) {
             return Err(Parse::Invalid);
         }
@@ -1656,10 +1887,14 @@ impl Editor {
 
     fn run_normal(&mut self, keys: &[Key]) -> Result<Outcome, Parse> {
         let (count, i) = self.read_prefix(keys)?;
-        let Some(&key) = keys.get(i) else { return Err(Parse::Incomplete) };
+        let Some(&key) = keys.get(i) else {
+            return Err(Parse::Incomplete);
+        };
         let n = count.unwrap_or(1);
         match key {
-            Key::Char(op @ ('d' | 'c' | 'y' | '>' | '<')) => return self.run_operator(keys, i + 1, count, op),
+            Key::Char(op @ ('d' | 'c' | 'y' | '>' | '<')) => {
+                return self.run_operator(keys, i + 1, count, op);
+            }
             Key::Char('g') => match keys.get(i + 1) {
                 Some(&Key::Char(op @ ('u' | 'U' | '~'))) => return self.run_operator(keys, i + 2, count, op),
                 Some(&Key::Char(d @ ('n' | 'N'))) => {
@@ -1733,18 +1968,35 @@ impl Editor {
             rec.pop();
             let text: String = rec.iter().map(|k| k.raw()).collect();
             if reg == '"' {
-                self.register = Register { text, linewise: false };
+                self.register = Register {
+                    text,
+                    linewise: false,
+                };
             } else if reg.is_ascii_uppercase() {
-                self.registers.entry(reg.to_ascii_lowercase()).or_default().text.push_str(&text);
+                self.registers
+                    .entry(reg.to_ascii_lowercase())
+                    .or_default()
+                    .text
+                    .push_str(&text);
             } else {
-                self.registers.insert(reg, Register { text, linewise: false });
+                self.registers.insert(
+                    reg,
+                    Register {
+                        text,
+                        linewise: false,
+                    },
+                );
             }
             self.recording = None;
             return Ok(Outcome::Ok);
         }
         if matches!(c, 'r' | 'm' | 'q' | '@') {
-            let Some(&next) = keys.get(i + 1) else { return Err(Parse::Incomplete) };
-            let Key::Char(arg) = next else { return Err(Parse::Invalid) };
+            let Some(&next) = keys.get(i + 1) else {
+                return Err(Parse::Incomplete);
+            };
+            let Key::Char(arg) = next else {
+                return Err(Parse::Invalid);
+            };
             if keys.len() > i + 2 {
                 return Err(Parse::Invalid);
             }
@@ -1789,7 +2041,10 @@ impl Editor {
                 let mut done = 0;
                 for _ in 0..n {
                     if let Some(s) = self.undo.pop() {
-                        self.redo.push(Snapshot { lines: self.lines.clone(), cursor: self.cursor });
+                        self.redo.push(Snapshot {
+                            lines: self.lines.clone(),
+                            cursor: self.cursor,
+                        });
                         self.lines = s.lines;
                         self.cursor = s.cursor;
                         done += 1;
@@ -2044,7 +2299,11 @@ impl Editor {
                 Ok(Outcome::Ok)
             }
             _ => {
-                let reg = if arg == '@' { self.last_macro.ok_or(Parse::Invalid)? } else { arg };
+                let reg = if arg == '@' {
+                    self.last_macro.ok_or(Parse::Invalid)?
+                } else {
+                    arg
+                };
                 if !Self::valid_register(reg) {
                     return Err(Parse::Invalid);
                 }
@@ -2071,10 +2330,18 @@ impl Editor {
 
     /// An operator (`d c y > <`, or `gu gU g~` as `u U ~`) from `keys[j..]`:
     /// doubled for whole lines, then a text object, `gn`, or a motion.
-    fn run_operator(&mut self, keys: &[Key], j: usize, count: Option<usize>, op: char) -> Result<Outcome, Parse> {
+    fn run_operator(
+        &mut self,
+        keys: &[Key],
+        j: usize,
+        count: Option<usize>,
+        op: char,
+    ) -> Result<Outcome, Parse> {
         let mut k = j;
         let count2 = Self::read_count(keys, &mut k);
-        let Some(&next) = keys.get(k) else { return Err(Parse::Incomplete) };
+        let Some(&next) = keys.get(k) else {
+            return Err(Parse::Incomplete);
+        };
         let total = mul_counts(count, count2);
         let tn = total.unwrap_or(1);
         let case_op = matches!(op, 'u' | 'U' | '~');
@@ -2096,20 +2363,29 @@ impl Editor {
             let last = (self.cursor.row + tn - 1).min(self.lines.len() - 1);
             Span::Lines(self.cursor.row, last)
         } else if matches!(next, Key::Char('i' | 'a')) {
-            let Some(&obj) = keys.get(k + 1) else { return Err(Parse::Incomplete) };
+            let Some(&obj) = keys.get(k + 1) else {
+                return Err(Parse::Incomplete);
+            };
             if k + 2 != keys.len() {
                 return Err(Parse::Invalid);
             }
-            let Key::Char(obj) = obj else { return Err(Parse::Invalid) };
-            self.object_span(next == Key::Char('i'), obj).ok_or(Parse::Invalid)?
+            let Key::Char(obj) = obj else {
+                return Err(Parse::Invalid);
+            };
+            self.object_span(next == Key::Char('i'), obj)
+                .ok_or(Parse::Invalid)?
         } else if next == Key::Char('g') && matches!(keys.get(k + 1), Some(Key::Char('n' | 'N'))) {
             if k + 2 != keys.len() {
                 return Err(Parse::Invalid);
             }
-            let (s, e) = self.match_at_or_after(keys[k + 1] == Key::Char('n')).ok_or(Parse::Invalid)?;
+            let (s, e) = self
+                .match_at_or_after(keys[k + 1] == Key::Char('n'))
+                .ok_or(Parse::Invalid)?;
             Span::Chars(s, e)
         } else {
-            let Some((motion, end)) = self.parse_motion(keys, k, total)? else { return Err(Parse::Invalid) };
+            let Some((motion, end)) = self.parse_motion(keys, k, total)? else {
+                return Err(Parse::Invalid);
+            };
             if end != keys.len() {
                 return Err(Parse::Invalid);
             }
@@ -2123,7 +2399,7 @@ impl Editor {
         let row = self.cursor.row;
         let line = &self.lines[row];
         let mut col = self.cursor.col;
-        if line.get(col).is_some_and(|c| c.is_ascii_digit()) {
+        if line.get(col).is_some_and(char::is_ascii_digit) {
             while col > 0 && line[col - 1].is_ascii_digit() {
                 col -= 1;
             }
@@ -2155,7 +2431,10 @@ impl Editor {
         if self.quiet > 0 {
             return;
         }
-        self.undo.push(Snapshot { lines: self.lines.clone(), cursor: self.cursor });
+        self.undo.push(Snapshot {
+            lines: self.lines.clone(),
+            cursor: self.cursor,
+        });
         self.redo.clear();
     }
 
@@ -2163,7 +2442,10 @@ impl Editor {
         let mut done = 0;
         for _ in 0..n {
             if let Some(s) = self.redo.pop() {
-                self.undo.push(Snapshot { lines: self.lines.clone(), cursor: self.cursor });
+                self.undo.push(Snapshot {
+                    lines: self.lines.clone(),
+                    cursor: self.cursor,
+                });
                 self.lines = s.lines;
                 self.cursor = s.cursor;
                 done += 1;
@@ -2179,7 +2461,9 @@ impl Editor {
 
     fn run_visual(&mut self, keys: &[Key]) -> Result<Outcome, Parse> {
         let (count, i) = self.read_prefix(keys)?;
-        let Some(&key) = keys.get(i) else { return Err(Parse::Incomplete) };
+        let Some(&key) = keys.get(i) else {
+            return Err(Parse::Incomplete);
+        };
         let (line, block) = match self.mode {
             Mode::Visual { line } => (line, false),
             Mode::Block => (false, true),
@@ -2190,9 +2474,16 @@ impl Editor {
             return Ok(Outcome::Ok);
         }
         if matches!(key, Key::Char('i' | 'a')) {
-            let Some(&obj) = keys.get(i + 1) else { return Err(Parse::Incomplete) };
-            let Key::Char(obj) = obj else { return Err(Parse::Invalid) };
-            match self.object_span(key == Key::Char('i'), obj).ok_or(Parse::Invalid)? {
+            let Some(&obj) = keys.get(i + 1) else {
+                return Err(Parse::Incomplete);
+            };
+            let Key::Char(obj) = obj else {
+                return Err(Parse::Invalid);
+            };
+            match self
+                .object_span(key == Key::Char('i'), obj)
+                .ok_or(Parse::Invalid)?
+            {
                 Span::Lines(a, b) => {
                     self.mode = Mode::Visual { line: true };
                     self.anchor = pos(a, 0);
@@ -2209,7 +2500,9 @@ impl Editor {
             return Ok(Outcome::Ok);
         }
         if key == Key::Char('g') && matches!(keys.get(i + 1), Some(Key::Char('n' | 'N'))) {
-            let (_, e) = self.match_at_or_after(keys[i + 1] == Key::Char('n')).ok_or(Parse::Invalid)?;
+            let (_, e) = self
+                .match_at_or_after(keys[i + 1] == Key::Char('n'))
+                .ok_or(Parse::Invalid)?;
             self.cursor = self.before(e);
             return Ok(Outcome::Ok);
         }
@@ -2220,12 +2513,22 @@ impl Editor {
             self.apply_motion(motion);
             return Ok(Outcome::Ok);
         }
-        let Key::Char(c) = key else { return Err(Parse::Invalid) };
-        let (s, e) = if self.anchor <= self.cursor { (self.anchor, self.cursor) } else { (self.cursor, self.anchor) };
+        let Key::Char(c) = key else {
+            return Err(Parse::Invalid);
+        };
+        let (s, e) = if self.anchor <= self.cursor {
+            (self.anchor, self.cursor)
+        } else {
+            (self.cursor, self.anchor)
+        };
         let cells = self.visual_cells();
         if c == 'r' {
-            let Some(&next) = keys.get(i + 1) else { return Err(Parse::Incomplete) };
-            let Key::Char(with) = next else { return Err(Parse::Invalid) };
+            let Some(&next) = keys.get(i + 1) else {
+                return Err(Parse::Incomplete);
+            };
+            let Key::Char(with) = next else {
+                return Err(Parse::Invalid);
+            };
             if keys.len() > i + 2 {
                 return Err(Parse::Invalid);
             }
@@ -2284,7 +2587,11 @@ impl Editor {
         match c {
             'v' | 'V' => {
                 let want_line = c == 'V';
-                self.mode = if want_line == line { Mode::Normal } else { Mode::Visual { line: want_line } };
+                self.mode = if want_line == line {
+                    Mode::Normal
+                } else {
+                    Mode::Visual { line: want_line }
+                };
                 Ok(Outcome::Ok)
             }
             'd' | 'x' | 'y' | 'c' | 's' => {
@@ -2320,12 +2627,20 @@ impl Editor {
                     .collect()
             }
             Mode::Visual { line } => {
-                let (s, e) = if self.anchor <= self.cursor { (self.anchor, self.cursor) } else { (self.cursor, self.anchor) };
+                let (s, e) = if self.anchor <= self.cursor {
+                    (self.anchor, self.cursor)
+                } else {
+                    (self.cursor, self.anchor)
+                };
                 (s.row..=e.row)
                     .map(|r| {
                         let len = self.line_len(r);
                         let from = if line || r != s.row { 0 } else { s.col.min(len) };
-                        let to = if line || r != e.row { len } else { (e.col + 1).min(len) };
+                        let to = if line || r != e.row {
+                            len
+                        } else {
+                            (e.col + 1).min(len)
+                        };
                         (r, from, to.max(from))
                     })
                     .collect()
@@ -2361,7 +2676,13 @@ impl Editor {
                     .map(|&(r, a, b)| self.lines[r][a..b].iter().collect::<String>())
                     .collect::<Vec<_>>()
                     .join("\n");
-                self.store(Register { text, linewise: false }, c == 'y');
+                self.store(
+                    Register {
+                        text,
+                        linewise: false,
+                    },
+                    c == 'y',
+                );
                 self.mode = Mode::Normal;
                 if c != 'y' {
                     self.snapshot();
@@ -2374,7 +2695,14 @@ impl Editor {
                     let start = c0.min(self.line_len(r0));
                     self.mode = Mode::Insert;
                     self.cursor = pos(r0, start);
-                    self.block_insert = Some(BlockInsert { row: r0, start, rows: r0 + 1..=r1, col: c0, to_end: false, pad: false });
+                    self.block_insert = Some(BlockInsert {
+                        row: r0,
+                        start,
+                        rows: r0 + 1..=r1,
+                        col: c0,
+                        to_end: false,
+                        pad: false,
+                    });
                 } else {
                     self.cursor = pos(r0, c0);
                     self.clamp();
@@ -2395,7 +2723,14 @@ impl Editor {
                 };
                 self.mode = Mode::Insert;
                 self.cursor = pos(r0, start);
-                self.block_insert = Some(BlockInsert { row: r0, start, rows: r0 + 1..=r1, col, to_end: append_end, pad: c == 'A' });
+                self.block_insert = Some(BlockInsert {
+                    row: r0,
+                    start,
+                    rows: r0 + 1..=r1,
+                    col,
+                    to_end: append_end,
+                    pad: c == 'A',
+                });
             }
             _ => return Err(Parse::Invalid),
         }
@@ -2421,10 +2756,18 @@ impl Editor {
     fn motion_span(&self, op: char, motion: Motion, word: bool) -> Span {
         let cur = self.cursor;
         if motion.kind == MotionKind::Linewise {
-            let (a, b) = if motion.to.row < cur.row { (motion.to.row, cur.row) } else { (cur.row, motion.to.row) };
+            let (a, b) = if motion.to.row < cur.row {
+                (motion.to.row, cur.row)
+            } else {
+                (cur.row, motion.to.row)
+            };
             return Span::Lines(a, b);
         }
-        let (mut s, mut e) = if motion.to < cur { (motion.to, cur) } else { (cur, motion.to) };
+        let (mut s, mut e) = if motion.to < cur {
+            (motion.to, cur)
+        } else {
+            (cur, motion.to)
+        };
         let mut inclusive = motion.kind == MotionKind::Inclusive;
         if op == 'c' && word && motion.to > cur {
             // `cw` changes to the end of the word, as `ce` would.
@@ -2432,7 +2775,10 @@ impl Editor {
                 let big = false;
                 let mut p = cur;
                 let cls = class(self.char_at(cur).unwrap(), big);
-                while self.char_at(pos(p.row, p.col + 1)).is_some_and(|c| class(c, big) == cls) {
+                while self
+                    .char_at(pos(p.row, p.col + 1))
+                    .is_some_and(|c| class(c, big) == cls)
+                {
                     p.col += 1;
                 }
                 e = p;
@@ -2457,7 +2803,11 @@ impl Editor {
     fn span_text(&self, span: Span) -> Register {
         match span {
             Span::Lines(a, b) => Register {
-                text: self.lines[a..=b].iter().map(|l| l.iter().collect::<String>()).collect::<Vec<_>>().join("\n"),
+                text: self.lines[a..=b]
+                    .iter()
+                    .map(|l| l.iter().collect::<String>())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
                 linewise: true,
             },
             Span::Chars(s, e) => {
@@ -2465,13 +2815,20 @@ impl Editor {
                 for row in s.row..=e.row {
                     let line = &self.lines[row];
                     let from = if row == s.row { s.col.min(line.len()) } else { 0 };
-                    let to = if row == e.row { e.col.min(line.len()) } else { line.len() };
+                    let to = if row == e.row {
+                        e.col.min(line.len())
+                    } else {
+                        line.len()
+                    };
                     out.extend(line[from..to.max(from)].iter());
                     if row != e.row {
                         out.push('\n');
                     }
                 }
-                Register { text: out, linewise: false }
+                Register {
+                    text: out,
+                    linewise: false,
+                }
             }
         }
     }
@@ -2503,15 +2860,24 @@ impl Editor {
 
     fn operate(&mut self, op: char, span: Span) -> Outcome {
         if let Span::Chars(s, e) = span
-            && e <= s && op != 'c' {
-                return Outcome::Bell(String::new());
-            }
+            && e <= s
+            && op != 'c'
+        {
+            return Outcome::Bell(String::new());
+        }
         let text = self.span_text(span);
         match op {
             '>' | '<' => {
                 let (a, b) = match span {
                     Span::Lines(a, b) => (a, b),
-                    Span::Chars(s, e) => (s.row, if e.col == 0 && e.row > s.row { e.row - 1 } else { e.row }),
+                    Span::Chars(s, e) => (
+                        s.row,
+                        if e.col == 0 && e.row > s.row {
+                            e.row - 1
+                        } else {
+                            e.row
+                        },
+                    ),
                 };
                 self.snapshot();
                 self.shift_lines(a, b, op == '>');
@@ -2540,9 +2906,10 @@ impl Editor {
                     Span::Chars(s, _) => s,
                 };
                 if let Span::Lines(a, _) = span
-                    && self.cursor.row != a {
-                        self.cursor = pos(a, 0);
-                    }
+                    && self.cursor.row != a
+                {
+                    self.cursor = pos(a, 0);
+                }
                 self.recording = None;
                 Outcome::Ok
             }
@@ -2593,9 +2960,18 @@ impl Editor {
         let reg = self.read_reg();
         if reg.linewise {
             let new: Vec<Vec<char>> = (0..n)
-                .flat_map(|_| reg.text.split('\n').map(|l| l.chars().collect::<Vec<char>>()).collect::<Vec<_>>())
+                .flat_map(|_| {
+                    reg.text
+                        .split('\n')
+                        .map(|l| l.chars().collect::<Vec<char>>())
+                        .collect::<Vec<_>>()
+                })
                 .collect();
-            let at = if after { self.cursor.row + 1 } else { self.cursor.row };
+            let at = if after {
+                self.cursor.row + 1
+            } else {
+                self.cursor.row
+            };
             for (k, line) in new.into_iter().enumerate() {
                 self.lines.insert(at + k, line);
             }
@@ -2603,7 +2979,11 @@ impl Editor {
         } else {
             let text: String = reg.text.repeat(n);
             let row = self.cursor.row;
-            let col = if after && !self.lines[row].is_empty() { self.cursor.col + 1 } else { self.cursor.col };
+            let col = if after && !self.lines[row].is_empty() {
+                self.cursor.col + 1
+            } else {
+                self.cursor.col
+            };
             let col = col.min(self.line_len(row));
             let tail: Vec<char> = self.lines[row].split_off(col);
             let parts: Vec<&str> = text.split('\n').collect();
@@ -2617,7 +2997,11 @@ impl Editor {
                 end.col = self.line_len(end.row);
             }
             self.lines[end.row].extend(tail);
-            self.cursor = if parts.len() > 1 { pos(row, col) } else { pos(end.row, end.col.saturating_sub(1)) };
+            self.cursor = if parts.len() > 1 {
+                pos(row, col)
+            } else {
+                pos(end.row, end.col.saturating_sub(1))
+            };
         }
         self.clamp();
     }
@@ -2691,7 +3075,9 @@ impl Editor {
     }
 
     fn word_end(&self, start: Pos, big: bool) -> Pos {
-        let Some((mut p, _)) = self.next(start) else { return start };
+        let Some((mut p, _)) = self.next(start) else {
+            return start;
+        };
         while self.cls_at(p, big) == 0 {
             match self.next(p) {
                 None => return p,
@@ -2709,7 +3095,9 @@ impl Editor {
     }
 
     fn word_backward(&self, start: Pos, big: bool) -> Pos {
-        let Some((mut p, _)) = self.prev(start) else { return start };
+        let Some((mut p, _)) = self.prev(start) else {
+            return start;
+        };
         while self.cls_at(p, big) == 0 {
             if self.empty_line(p.row) {
                 return pos(p.row, 0);
@@ -2806,7 +3194,11 @@ impl Editor {
             }
             col = c;
         }
-        let col = if till { if forward { col - 1 } else { col + 1 } } else { col };
+        let col = if till {
+            if forward { col - 1 } else { col + 1 }
+        } else {
+            col
+        };
         Some(pos(self.cursor.row, col))
     }
 
@@ -2819,7 +3211,10 @@ impl Editor {
             for from in 0..=line.len() {
                 if let Some(m) = re.match_here(line, from, icase) {
                     let (col, len) = (m.start, m.end - m.start);
-                    if hits.last().is_some_and(|&(p, _): &(Pos, usize)| p == pos(row, col)) {
+                    if hits
+                        .last()
+                        .is_some_and(|&(p, _): &(Pos, usize)| p == pos(row, col))
+                    {
                         continue;
                     }
                     if whole_word {
@@ -2841,7 +3236,9 @@ impl Editor {
         let pat = self.last_search.clone()?;
         let hits = self.all_hits(&pat, false);
         let cur = self.cursor;
-        let under = hits.iter().find(|(p, len)| p.row == cur.row && p.col <= cur.col && cur.col < p.col + (*len).max(1));
+        let under = hits
+            .iter()
+            .find(|(p, len)| p.row == cur.row && p.col <= cur.col && cur.col < p.col + (*len).max(1));
         let (at, len) = match under {
             Some(h) => *h,
             None if forward => *hits.iter().find(|(p, _)| *p > cur).or(hits.first())?,
@@ -2855,7 +3252,11 @@ impl Editor {
         if pat.is_empty() {
             return None;
         }
-        let hits: Vec<Pos> = self.all_hits(pat, whole_word).into_iter().map(|(p, _)| p).collect();
+        let hits: Vec<Pos> = self
+            .all_hits(pat, whole_word)
+            .into_iter()
+            .map(|(p, _)| p)
+            .collect();
         if forward {
             hits.iter().find(|&&h| h > from).or(hits.first()).copied()
         } else {
@@ -2902,7 +3303,12 @@ impl Editor {
             return None;
         }
         let starts = self.sentence_starts();
-        let s = starts.iter().rev().find(|&&s| s <= cur).copied().unwrap_or(pos(0, 0));
+        let s = starts
+            .iter()
+            .rev()
+            .find(|&&s| s <= cur)
+            .copied()
+            .unwrap_or(pos(0, 0));
         let next = starts.iter().find(|&&p| p > cur).copied();
         let mut end = match next {
             Some(n) if n.row == cur.row => n,
@@ -3036,28 +3442,36 @@ impl Editor {
         let mut k = 0;
         while k < text.len() {
             if text[k] == '<'
-                && let Some(len) = text[k..].iter().position(|&c| c == '>') {
-                    let end = k + len + 1;
-                    let body: String = text[k + 1..end - 1].iter().collect();
-                    if let Some(name) = body.strip_prefix('/') {
-                        if let Some(i) = open.iter().rposition(|(n, _, _)| n == name.trim()) {
-                            let (_, os, oe) = open[i].clone();
-                            open.truncate(i);
-                            pairs.push((os, oe, k, end));
-                        }
-                    } else if !body.ends_with('/') {
-                        let name: String = body.chars().take_while(|c| !c.is_whitespace()).collect();
-                        if !name.is_empty() {
-                            open.push((name, k, end));
-                        }
+                && let Some(len) = text[k..].iter().position(|&c| c == '>')
+            {
+                let end = k + len + 1;
+                let body: String = text[k + 1..end - 1].iter().collect();
+                if let Some(name) = body.strip_prefix('/') {
+                    if let Some(i) = open.iter().rposition(|(n, _, _)| n == name.trim()) {
+                        let (_, os, oe) = open[i].clone();
+                        open.truncate(i);
+                        pairs.push((os, oe, k, end));
                     }
-                    k = end;
-                    continue;
+                } else if !body.ends_with('/') {
+                    let name: String = body.chars().take_while(|c| !c.is_whitespace()).collect();
+                    if !name.is_empty() {
+                        open.push((name, k, end));
+                    }
                 }
+                k = end;
+                continue;
+            }
             k += 1;
         }
-        let &(os, oe, cs, ce) = pairs.iter().filter(|p| p.0 <= cur && cur < p.3).min_by_key(|p| p.3 - p.0)?;
-        if inner { Some((to_pos(oe), to_pos(cs))) } else { Some((to_pos(os), to_pos(ce))) }
+        let &(os, oe, cs, ce) = pairs
+            .iter()
+            .filter(|p| p.0 <= cur && cur < p.3)
+            .min_by_key(|p| p.3 - p.0)?;
+        if inner {
+            Some((to_pos(oe), to_pos(cs)))
+        } else {
+            Some((to_pos(os), to_pos(ce)))
+        }
     }
 
     /// The range [start, end) of a text object around the cursor.
@@ -3097,7 +3511,10 @@ impl Editor {
                         }
                     } else {
                         let mut k = e;
-                        while k < line.len() && class(line[k], big) == class(line.get(e).copied().unwrap_or(' '), big) && !line[k].is_whitespace() {
+                        while k < line.len()
+                            && class(line[k], big) == class(line.get(e).copied().unwrap_or(' '), big)
+                            && !line[k].is_whitespace()
+                        {
                             k += 1;
                         }
                         e = k;
@@ -3107,7 +3524,12 @@ impl Editor {
             }
             '"' | '\'' | '`' => {
                 let line = &self.lines[cur.row];
-                let quotes: Vec<usize> = line.iter().enumerate().filter(|(_, c)| **c == obj).map(|(i, _)| i).collect();
+                let quotes: Vec<usize> = line
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| **c == obj)
+                    .map(|(i, _)| i)
+                    .collect();
                 let pair = quotes
                     .chunks(2)
                     .filter(|p| p.len() == 2)
@@ -3183,13 +3605,36 @@ impl Editor {
 
 /// Ex commands Tab completes (vimtutor 7.3).
 const EX_NAMES: &[&str] = &[
-    "copy", "delete", "edit", "global", "help", "registers", "join", "move", "nohlsearch", "normal", "quit", "read", "set", "sort", "substitute",
-    "vglobal", "write", "wq",
+    "copy",
+    "delete",
+    "edit",
+    "global",
+    "help",
+    "registers",
+    "join",
+    "move",
+    "nohlsearch",
+    "normal",
+    "quit",
+    "read",
+    "set",
+    "sort",
+    "substitute",
+    "vglobal",
+    "write",
+    "wq",
 ];
 
 /// Options `:set` knows, for completion.
 const OPTIONS: &[&str] = &[
-    "hlsearch", "ignorecase", "incsearch", "nohlsearch", "noignorecase", "noincsearch", "nosmartcase", "smartcase",
+    "hlsearch",
+    "ignorecase",
+    "incsearch",
+    "nohlsearch",
+    "noignorecase",
+    "noincsearch",
+    "nosmartcase",
+    "smartcase",
 ];
 
 impl Editor {
@@ -3240,14 +3685,22 @@ impl Editor {
     pub fn where_am_i(&self) -> String {
         let n = self.lines.len();
         let row = self.cursor.row + 1;
-        format!("\"isle\" {n} lines --{}%-- line {row} of {n}, col {}", row * 100 / n, self.cursor.col + 1)
+        format!(
+            "\"isle\" {n} lines --{}%-- line {row} of {n}, col {}",
+            row * 100 / n,
+            self.cursor.col + 1
+        )
     }
 
     /// The prompt in front of the command line: `:`, `/` or `?`.
     pub fn cmd_prefix(&self) -> char {
         match self.mode {
             Mode::Command { search: true } => {
-                if self.search_back { '?' } else { '/' }
+                if self.search_back {
+                    '?'
+                } else {
+                    '/'
+                }
             }
             _ => ':',
         }
@@ -3261,7 +3714,7 @@ impl Editor {
         } else if pat.contains(r"\C") {
             false
         } else {
-            self.ignorecase && !(self.smartcase && pat.chars().any(|c| c.is_uppercase()))
+            self.ignorecase && !(self.smartcase && pat.chars().any(char::is_uppercase))
         }
     }
 
@@ -3269,9 +3722,15 @@ impl Editor {
     /// ('incsearch'), else the last search ('hlsearch').
     pub fn search_highlights(&self) -> Vec<(Pos, usize)> {
         let pat = match self.mode {
-            Mode::Command { search: true } if self.incsearch && !self.cmdline.is_empty() => self.cmdline.clone(),
+            Mode::Command { search: true } if self.incsearch && !self.cmdline.is_empty() => {
+                self.cmdline.clone()
+            }
             Mode::Confirm => {
-                return self.confirm.as_ref().and_then(|c| c.matches.first()).map(|&(r, c, l)| vec![(pos(r, c), l)]).unwrap_or_default();
+                return self
+                    .confirm
+                    .as_ref()
+                    .and_then(|c| c.matches.first())
+                    .map_or_default(|&(r, c, l)| vec![(pos(r, c), l)]);
             }
             _ if self.hlsearch => match &self.last_search {
                 Some(p) => p.clone(),
@@ -3279,7 +3738,10 @@ impl Editor {
             },
             _ => return Vec::new(),
         };
-        self.all_hits(&pat, false).into_iter().filter(|(_, l)| *l > 0).collect()
+        self.all_hits(&pat, false)
+            .into_iter()
+            .filter(|(_, l)| *l > 0)
+            .collect()
     }
 
     /// `:set` with one or more options (vimtutor 6.5).
@@ -3320,7 +3782,11 @@ impl Editor {
                 f(self.incsearch, "incsearch")
             ));
         }
-        if shown.is_empty() { Outcome::Ok } else { Outcome::Info(shown.join("  ")) }
+        if shown.is_empty() {
+            Outcome::Ok
+        } else {
+            Outcome::Info(shown.join("  "))
+        }
     }
 
     /// A pretend shell for `:!cmd` and `:r !cmd` (vimtutor 5.1, 5.5).
@@ -3332,43 +3798,52 @@ impl Editor {
             "ls" | "dir" => Ok(self.files.keys().cloned().collect::<Vec<_>>().join("\n")),
             "cat" | "type" => rest
                 .iter()
-                .map(|f| self.files.get(*f).cloned().ok_or(format!("cat: {f}: No such file")))
+                .map(|f| {
+                    self.files
+                        .get(*f)
+                        .cloned()
+                        .ok_or(format!("cat: {f}: No such file"))
+                })
                 .collect::<Result<Vec<_>, _>>()
                 .map(|t| t.join("\n")),
             "echo" => Ok(rest.join(" ")),
             "pwd" => Ok("/archipelago".into()),
             "date" => Ok("Thu Nov 19 09:00:00 UTC 2026".into()),
             "whoami" => Ok("wisp".into()),
-            _ => Err(format!("{name}: command not found (try ls, cat, echo, pwd, date)")),
+            _ => Err(format!(
+                "{name}: command not found (try ls, cat, echo, pwd, date)"
+            )),
         }
     }
 
     /// Tab completes the command line; Ctrl-d lists the choices (vimtutor 7.3).
     fn complete(&mut self, list: bool) -> Outcome {
-        if !list
-            && let Some((choices, at, head)) = &mut self.completion {
-                // Tab again: the next choice.
-                *at = (*at + 1) % choices.len();
-                self.cmdline = format!("{head}{}", choices[*at]);
-                return Outcome::Ok;
-            }
+        if !list && let Some((choices, at, head)) = &mut self.completion {
+            // Tab again: the next choice.
+            *at = (*at + 1) % choices.len();
+            self.cmdline = format!("{head}{}", choices[*at]);
+            return Outcome::Ok;
+        }
         let line = self.cmdline.clone();
-        let (head, word, choices): (String, String, Vec<String>) = match line.rfind(' ') {
-            Some(sp) => {
-                let (head, word) = (&line[..=sp], &line[sp + 1..]);
-                let cmd = head.trim().trim_start_matches(|c: char| !c.is_ascii_alphabetic() && c != '!');
-                let names: Vec<String> = if cmd.starts_with("se") {
-                    OPTIONS.iter().map(|s| s.to_string()).collect()
-                } else {
-                    self.files.keys().cloned().collect()
-                };
-                (head.to_string(), word.to_string(), names)
-            }
-            None => {
-                // The command name, after any range.
-                let start = line.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(line.len());
-                (line[..start].to_string(), line[start..].to_string(), EX_NAMES.iter().map(|s| s.to_string()).collect())
-            }
+        let (head, word, choices): (String, String, Vec<String>) = if let Some(sp) = line.rfind(' ') {
+            let (head, word) = (&line[..=sp], &line[sp + 1..]);
+            let cmd = head
+                .trim()
+                .trim_start_matches(|c: char| !c.is_ascii_alphabetic() && c != '!');
+            let names: Vec<String> = if cmd.starts_with("se") {
+                OPTIONS.iter().map(ToString::to_string).collect()
+            } else {
+                self.files.keys().cloned().collect()
+            };
+            (head.to_string(), word.to_string(), names)
+        } else {
+            // The command name, after any range.
+            let start = line.find(|c: char| c.is_ascii_alphabetic()).unwrap_or(line.len());
+            (
+                line[..start].to_string(),
+                line[start..].to_string(),
+                EX_NAMES.iter().map(ToString::to_string).collect(),
+            )
         };
         let found: Vec<String> = choices.into_iter().filter(|c| c.starts_with(&word)).collect();
         if found.is_empty() {
@@ -3380,7 +3855,12 @@ impl Editor {
         self.cmdline = format!("{head}{}", found[0]);
         if found.len() > 1 {
             self.completion = Some((found, 0, head));
-        } else if !line.contains(' ') && !matches!(found[0].as_str(), "nohlsearch" | "quit" | "wq" | "sort" | "join" | "delete") {
+        } else if !line.contains(' ')
+            && !matches!(
+                found[0].as_str(),
+                "nohlsearch" | "quit" | "wq" | "sort" | "join" | "delete"
+            )
+        {
             self.cmdline.push(' ');
         }
         Outcome::Ok
@@ -3397,9 +3877,16 @@ impl Editor {
             }
             matches.extend(hits.into_iter().filter(|(_, l)| *l > 0).map(|(c, l)| (row, c, l)));
         }
-        let Some(&(row, col, _)) = matches.first() else { return Outcome::Bell(format!("Pattern not found: {pat}")) };
+        let Some(&(row, col, _)) = matches.first() else {
+            return Outcome::Bell(format!("Pattern not found: {pat}"));
+        };
         self.snapshot_force();
-        self.confirm = Some(ConfirmSub { matches, rep: rep.to_string(), pat: pat.to_string(), icase });
+        self.confirm = Some(ConfirmSub {
+            matches,
+            rep: rep.to_string(),
+            pat: pat.to_string(),
+            icase,
+        });
         self.mode = Mode::Confirm;
         self.cursor = pos(row, col);
         Outcome::Info(self.confirm_prompt())
@@ -3429,7 +3916,11 @@ impl Editor {
             let mut m = Regex::new(&c.pat)
                 .match_here(&line, col, c.icase)
                 .filter(|m| m.start == col && m.end == col + len)
-                .unwrap_or(Match { start: col, end: col + len, groups: [None; 10] });
+                .unwrap_or(Match {
+                    start: col,
+                    end: col + len,
+                    groups: [None; 10],
+                });
             m.groups[0] = Some((col, col + len));
             let new = expand(&c.rep, &line, &m);
             let delta = new.len() as i64 - len as i64;
@@ -3455,17 +3946,14 @@ impl Editor {
             }
             _ => c.matches.clear(),
         }
-        match c.matches.first() {
-            Some(&(row, col, _)) => {
-                self.cursor = pos(row, col);
-                self.confirm = Some(c);
-                Outcome::Info(self.confirm_prompt())
-            }
-            None => {
-                self.mode = Mode::Normal;
-                self.clamp();
-                Outcome::Ok
-            }
+        if let Some(&(row, col, _)) = c.matches.first() {
+            self.cursor = pos(row, col);
+            self.confirm = Some(c);
+            Outcome::Info(self.confirm_prompt())
+        } else {
+            self.mode = Mode::Normal;
+            self.clamp();
+            Outcome::Ok
         }
     }
 }
@@ -3503,13 +3991,19 @@ fn mul_counts(a: Option<usize>, b: Option<usize>) -> Option<usize> {
 /// Whether `pat` matches `line` at `col`, and how long the match is (a
 /// vim pattern: see `regex`).
 pub fn match_at(pat: &str, line: &[char], col: usize, icase: bool) -> Option<usize> {
-    Regex::new(pat).match_here(line, col, icase).filter(|m| m.start == col).map(|m| m.end - m.start)
+    Regex::new(pat)
+        .match_here(line, col, icase)
+        .filter(|m| m.start == col)
+        .map(|m| m.end - m.start)
 }
 
 /// The non-overlapping matches of `pat` in `line`, as `:s` and `:g` see
 /// them: where each starts, and how long it is.
 pub fn find_all(pat: &str, line: &[char], icase: bool) -> Vec<(usize, usize)> {
-    find_matches(&Regex::new(pat), line, icase).into_iter().map(|m| (m.start, m.end - m.start)).collect()
+    find_matches(&Regex::new(pat), line, icase)
+        .into_iter()
+        .map(|m| (m.start, m.end - m.start))
+        .collect()
 }
 
 /// The non-overlapping matches of `re` in `line`, with their groups.
@@ -3518,7 +4012,11 @@ pub fn find_matches(re: &Regex, line: &[char], icase: bool) -> Vec<Match> {
     let mut col = 0;
     while col <= line.len() {
         match re.match_here(line, col, icase) {
-            Some(m) if out.last().is_none_or(|l| m.start >= l.end && (m.start > l.start || m.end > l.end)) => {
+            Some(m)
+                if out
+                    .last()
+                    .is_none_or(|l| m.start >= l.end && (m.start > l.start || m.end > l.end)) =>
+            {
                 col = if m.end > col { m.end } else { col + 1 };
                 out.push(m);
             }
@@ -3671,7 +4169,10 @@ mod tests {
         assert_eq!(run("hello world", pos(0, 0), "cwbye<Esc>").text(), "bye world");
         assert_eq!(run("hello world", pos(0, 2), "ciwbye<Esc>").text(), "bye world");
         assert_eq!(run("hello world", pos(0, 0), "Cnope<Esc>").text(), "nope");
-        assert_eq!(run("say \"hi there\" now", pos(0, 0), "ci\"yo<Esc>").text(), "say \"yo\" now");
+        assert_eq!(
+            run("say \"hi there\" now", pos(0, 0), "ci\"yo<Esc>").text(),
+            "say \"yo\" now"
+        );
         assert_eq!(run("f(a, b)", pos(0, 3), "ci(x<Esc>").text(), "f(x)");
         assert_eq!(run("f(a, b)", pos(0, 3), "da(").text(), "f");
         assert_eq!(run("a word here", pos(0, 3), "daw").text(), "a here");
@@ -3712,7 +4213,10 @@ mod tests {
         assert_eq!(run("abcd", pos(0, 0), "x..").text(), "d");
         assert_eq!(run("a b c", pos(0, 0), "dw.").text(), "c");
         assert_eq!(run("x\ny\nz", pos(0, 0), "A;<Esc>j.j.").text(), "x;\ny;\nz;");
-        assert_eq!(run("cat cat cat", pos(0, 0), "cwdog<Esc>w.w.").text(), "dog dog dog");
+        assert_eq!(
+            run("cat cat cat", pos(0, 0), "cwdog<Esc>w.w.").text(),
+            "dog dog dog"
+        );
         assert_eq!(run("abc", pos(0, 0), "x.u").text(), "bc");
     }
 
@@ -3729,8 +4233,14 @@ mod tests {
     fn misc() {
         assert_eq!(run("a\n  b", pos(0, 0), "J").text(), "a b");
         assert_eq!(run("abc", pos(0, 0), "~~").text(), "ABc");
-        assert_eq!(run("cat cat\ncat", pos(0, 0), ":s/cat/dog/<CR>").text(), "dog cat\ncat");
-        assert_eq!(run("cat cat\ncat", pos(0, 0), ":%s/cat/dog/g<CR>").text(), "dog dog\ndog");
+        assert_eq!(
+            run("cat cat\ncat", pos(0, 0), ":s/cat/dog/<CR>").text(),
+            "dog cat\ncat"
+        );
+        assert_eq!(
+            run("cat cat\ncat", pos(0, 0), ":%s/cat/dog/g<CR>").text(),
+            "dog dog\ndog"
+        );
         assert_eq!(run("a\nb\nc", pos(0, 0), ":3<CR>").cursor, pos(2, 0));
     }
 
@@ -3739,11 +4249,17 @@ mod tests {
         assert_eq!(run("a\nb", pos(0, 0), "\"ayyjdd\"ap").text(), "a\na");
         assert_eq!(run("one two", pos(0, 0), "\"ayw\"bywwdw\"aP").text(), "oneone  ");
         // A delete doesn't clobber "0, so the yank survives.
-        assert_eq!(run("keep\nzap\nx", pos(0, 0), "yyjddj\"0p").text(), "keep\nx\nkeep");
+        assert_eq!(
+            run("keep\nzap\nx", pos(0, 0), "yyjddj\"0p").text(),
+            "keep\nx\nkeep"
+        );
         // The black hole swallows the delete.
         assert_eq!(run("keep\nzap", pos(0, 0), "yyj\"_ddp").text(), "keep\nkeep");
         // Upper case appends.
-        assert_eq!(run("a\nb\nc", pos(0, 0), "\"ayyj\"Ayyj\"ap").text(), "a\nb\nc\na\nb");
+        assert_eq!(
+            run("a\nb\nc", pos(0, 0), "\"ayyj\"Ayyj\"ap").text(),
+            "a\nb\nc\na\nb"
+        );
     }
 
     #[test]
@@ -3799,11 +4315,17 @@ mod tests {
         let t = "abc\ndef\nghi";
         assert_eq!(run(t, pos(0, 0), "<C-v>jjd").text(), "bc\nef\nhi");
         assert_eq!(run(t, pos(0, 0), "<C-v>jjI# <Esc>").text(), "# abc\n# def\n# ghi");
-        assert_eq!(run("a\nbbb\ncc", pos(0, 0), "<C-v>jj$A;<Esc>").text(), "a;\nbbb;\ncc;");
+        assert_eq!(
+            run("a\nbbb\ncc", pos(0, 0), "<C-v>jj$A;<Esc>").text(),
+            "a;\nbbb;\ncc;"
+        );
         assert_eq!(run(t, pos(0, 1), "<C-v>jlcX<Esc>").text(), "aX\ndX\nghi");
         assert_eq!(run(t, pos(0, 0), "<C-v>jlrx").text(), "xxc\nxxf\nghi");
         assert_eq!(run(t, pos(0, 0), "<C-v>jU").text(), "Abc\nDef\nghi");
-        assert_eq!(run("ab\nc\nde", pos(0, 1), "<C-v>jjAX<Esc>").text(), "abX\nc X\ndeX");
+        assert_eq!(
+            run("ab\nc\nde", pos(0, 1), "<C-v>jjAX<Esc>").text(),
+            "abX\nc X\ndeX"
+        );
     }
 
     #[test]
@@ -3811,7 +4333,10 @@ mod tests {
         let e = run("foo bar foo baz foo", pos(0, 0), "/foo<CR>cgnqux<Esc>..");
         assert_eq!(e.text(), "qux bar qux baz qux");
         assert_eq!(run("a foo b", pos(0, 0), "*").text(), "a foo b");
-        assert_eq!(run("x foo y foo", pos(0, 2), "*Ncgnbar<Esc>").text(), "x bar y foo");
+        assert_eq!(
+            run("x foo y foo", pos(0, 2), "*Ncgnbar<Esc>").text(),
+            "x bar y foo"
+        );
         assert_eq!(run("a foo b", pos(0, 0), "/foo<CR>0dgn").text(), "a  b");
     }
 
@@ -3840,15 +4365,27 @@ mod tests {
         assert_eq!(run(t, pos(0, 0), ":g/^/m0<CR>").text(), "d\nc\nb\na");
         assert_eq!(run("x1\ny\nx2\nz", pos(0, 0), ":g/x/d<CR>").text(), "y\nz");
         assert_eq!(run("x1\ny\nx2\nz", pos(0, 0), ":v/x/d<CR>").text(), "x1\nx2");
-        assert_eq!(run("x1\ny\nx2", pos(0, 0), ":g/x/norm A!<CR>").text(), "x1!\ny\nx2!");
+        assert_eq!(
+            run("x1\ny\nx2", pos(0, 0), ":g/x/norm A!<CR>").text(),
+            "x1!\ny\nx2!"
+        );
         assert_eq!(run("a\nb", pos(0, 0), ":%norm I- <CR>").text(), "- a\n- b");
         assert_eq!(run("a\nb\nc", pos(0, 0), ":%s/^/> /<CR>").text(), "> a\n> b\n> c");
         assert_eq!(run("a,b", pos(0, 0), ":s/,/\\r/<CR>").text(), "a\nb");
         assert_eq!(run("b\nc\na", pos(0, 0), ":sort<CR>").text(), "a\nb\nc");
-        assert_eq!(run("a\nb\nc\nd", pos(0, 0), "Vj:s/$/;/<CR>").text(), "a;\nb;\nc\nd");
+        assert_eq!(
+            run("a\nb\nc\nd", pos(0, 0), "Vj:s/$/;/<CR>").text(),
+            "a;\nb;\nc\nd"
+        );
         assert_eq!(run("a\nb\nc\nd", pos(0, 0), "jma:'a,$d<CR>").text(), "a");
-        assert_eq!(run("cat cat\ncat", pos(0, 0), ":s/cat/dog/<CR>j&").text(), "dog cat\ndog");
-        assert_eq!(run("cat cat\ncat", pos(0, 0), ":s/cat/dog/g<CR>g&").text(), "dog dog\ndog");
+        assert_eq!(
+            run("cat cat\ncat", pos(0, 0), ":s/cat/dog/<CR>j&").text(),
+            "dog cat\ndog"
+        );
+        assert_eq!(
+            run("cat cat\ncat", pos(0, 0), ":s/cat/dog/g<CR>g&").text(),
+            "dog dog\ndog"
+        );
         assert_eq!(run("a\nb\nc", pos(0, 0), ":.,+1j<CR>").text(), "a b\nc");
         assert_eq!(run("a\nb", pos(0, 0), ":%><CR>").text(), "    a\n    b");
         // One undo step for the whole command.
@@ -3872,7 +4409,10 @@ mod tests {
         assert_eq!(run(t, pos(0, 0), "/bird<CR>gg<C-o>").cursor, pos(3, 0));
         assert_eq!(run(t, pos(0, 0), ":3<CR><C-o>").cursor, pos(0, 0));
         let mut e = run(t, pos(1, 1), "");
-        assert_eq!(e.feed(Key::CtrlG), Outcome::Info("\"isle\" 4 lines --50%-- line 2 of 4, col 2".into()));
+        assert_eq!(
+            e.feed(Key::CtrlG),
+            Outcome::Info("\"isle\" 4 lines --50%-- line 2 of 4, col 2".into())
+        );
     }
 
     #[test]
@@ -3891,10 +4431,22 @@ mod tests {
         let e = run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>yny");
         assert_eq!(e.text(), "dog cat dog");
         assert_eq!(e.mode, Mode::Normal);
-        assert_eq!(run("cat cat\ncat", pos(0, 0), ":%s/cat/dog/gc<CR>na").text(), "cat dog\ndog");
-        assert_eq!(run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>l").text(), "dog cat cat");
-        assert_eq!(run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>yq").text(), "dog cat cat");
-        assert_eq!(run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>yyqu").text(), "cat cat cat");
+        assert_eq!(
+            run("cat cat\ncat", pos(0, 0), ":%s/cat/dog/gc<CR>na").text(),
+            "cat dog\ndog"
+        );
+        assert_eq!(
+            run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>l").text(),
+            "dog cat cat"
+        );
+        assert_eq!(
+            run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>yq").text(),
+            "dog cat cat"
+        );
+        assert_eq!(
+            run("cat cat cat", pos(0, 0), ":s/cat/dog/gc<CR>yyqu").text(),
+            "cat cat cat"
+        );
         let mut e = run("cat", pos(0, 0), "");
         let out = e.feed_all_last(&parse_keys(":s/cat/dog/c<CR>"));
         assert_eq!(out, Outcome::Info("replace with dog (y/n/a/q/l)?".into()));
@@ -3916,7 +4468,10 @@ mod tests {
         let mut e = Editor::new("a\nb\nc");
         e.feed_all(&parse_keys("jVj:w part.txt<CR>"));
         assert_eq!(e.files.get("part.txt").map(String::as_str), Some("b\nc"));
-        assert!(matches!(run("x", pos(0, 0), "").feed_all_last(&parse_keys(":r nope<CR>")), Outcome::Bell(_)));
+        assert!(matches!(
+            run("x", pos(0, 0), "").feed_all_last(&parse_keys(":r nope<CR>")),
+            Outcome::Bell(_)
+        ));
     }
 
     #[test]
@@ -3932,7 +4487,11 @@ mod tests {
         assert_eq!(run(t, pos(0, 0), ":set ic scs<CR>/GOLD<CR>").cursor, pos(0, 10));
         let e = run(t, pos(0, 0), ":set hls<CR>/gold<CR>");
         assert_eq!(e.search_highlights(), vec![(pos(0, 5), 4)]);
-        assert!(run(t, pos(0, 0), ":set hls<CR>/gold<CR>:noh<CR>").search_highlights().is_empty());
+        assert!(
+            run(t, pos(0, 0), ":set hls<CR>/gold<CR>:noh<CR>")
+                .search_highlights()
+                .is_empty()
+        );
         // incsearch lights up matches while the pattern is typed.
         let e = run(t, pos(0, 0), ":set is ic<CR>/go");
         assert_eq!(e.search_highlights().len(), 3);
@@ -3973,16 +4532,25 @@ mod tests {
         e.feed_all(&parse_keys("yy:e recipe.txt<CR>Gp"));
         assert_eq!(e.buffer_name, "recipe.txt");
         assert_eq!(e.text(), "flour\nsugar\neggs");
-        assert_eq!(e.feed_all_last(&parse_keys(":w<CR>")), Outcome::Info("\"recipe.txt\" 3L written".into()));
+        assert_eq!(
+            e.feed_all_last(&parse_keys(":w<CR>")),
+            Outcome::Info("\"recipe.txt\" 3L written".into())
+        );
         assert_eq!(e.files["recipe.txt"], "flour\nsugar\neggs");
         e.feed_all(&parse_keys("kyy:e #<CR>p"));
         assert_eq!(e.buffer_name, ISLE);
         assert_eq!(e.text(), "eggs\nsugar");
         // :w on the isle itself is the game's.
-        assert_eq!(e.feed_all_last(&parse_keys(":w<CR>")), Outcome::Command("w".into()));
+        assert_eq!(
+            e.feed_all_last(&parse_keys(":w<CR>")),
+            Outcome::Command("w".into())
+        );
         let mut e = Editor::new("one two");
         e.feed_all(&parse_keys("\"ayw"));
-        assert_eq!(e.feed_all_last(&parse_keys(":reg<CR>")), Outcome::Info("\"\" one    \"a one ".into()));
+        assert_eq!(
+            e.feed_all_last(&parse_keys(":reg<CR>")),
+            Outcome::Info("\"\" one    \"a one ".into())
+        );
     }
 
     #[test]
@@ -4008,7 +4576,10 @@ mod tests {
         assert_eq!(run("1\n2\n3\n4\n5", pos(2, 0), "H").cursor, pos(0, 0));
         assert_eq!(run("1\n2\n3\n4\n5", pos(0, 0), "L").cursor, pos(4, 0));
         assert_eq!(run("1\n2\n3\n4\n5", pos(0, 0), "M").cursor, pos(2, 0));
-        assert_eq!(run("1\n2\n3\n4\n5\n6\n7\n8\n9\n10", pos(0, 0), "50%").cursor, pos(4, 0));
+        assert_eq!(
+            run("1\n2\n3\n4\n5\n6\n7\n8\n9\n10", pos(0, 0), "50%").cursor,
+            pos(4, 0)
+        );
         assert_eq!(run("a\nb\nc", pos(0, 0), "dL").text(), "");
     }
 
@@ -4048,13 +4619,31 @@ mod tests {
 
     #[test]
     fn regex_substitution_and_bars() {
-        assert_eq!(run("hello world", pos(0, 0), r":s/\(\w\+\) \(\w\+\)/\2 \1/<CR>").text(), "world hello");
-        assert_eq!(run("a1 b22 c333", pos(0, 0), r":s/\d\+/#/g<CR>").text(), "a# b# c#");
-        assert_eq!(run("cat dog", pos(0, 0), r":s/cat\|dog/pet/g<CR>").text(), "pet pet");
+        assert_eq!(
+            run("hello world", pos(0, 0), r":s/\(\w\+\) \(\w\+\)/\2 \1/<CR>").text(),
+            "world hello"
+        );
+        assert_eq!(
+            run("a1 b22 c333", pos(0, 0), r":s/\d\+/#/g<CR>").text(),
+            "a# b# c#"
+        );
+        assert_eq!(
+            run("cat dog", pos(0, 0), r":s/cat\|dog/pet/g<CR>").text(),
+            "pet pet"
+        );
         assert_eq!(run("a b", pos(0, 0), ":s/a/x/ | s/b/y/<CR>").text(), "x y");
-        assert_eq!(run("ab\nab", pos(0, 0), ":%s/a/1/ | %s/b/2/<CR>").text(), "12\n12");
-        assert_eq!(run("one\ntwo", pos(0, 0), ":g/o/s/o/0/g | s/0/O/<CR>").text(), "One\ntwO");
+        assert_eq!(
+            run("ab\nab", pos(0, 0), ":%s/a/1/ | %s/b/2/<CR>").text(),
+            "12\n12"
+        );
+        assert_eq!(
+            run("one\ntwo", pos(0, 0), ":g/o/s/o/0/g | s/0/O/<CR>").text(),
+            "One\ntwO"
+        );
         assert_eq!(run("x.y xzy", pos(0, 0), r"/x\.y<CR>:s//Q/<CR>").text(), "Q xzy");
-        assert_eq!(run("aa bb", pos(0, 0), r":s/\v(\w)\1/<\1>/g<CR>").text(), "<a> <b>");
+        assert_eq!(
+            run("aa bb", pos(0, 0), r":s/\v(\w)\1/<\1>/g<CR>").text(),
+            "<a> <b>"
+        );
     }
 }

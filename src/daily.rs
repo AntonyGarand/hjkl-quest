@@ -24,7 +24,9 @@ const LINES: &[&str] = &[
     "the archive smells of dust and rain",
 ];
 
-const WORDS: &[&str] = &["tide", "owl", "salt", "lamp", "reef", "kelp", "fern", "moss", "gale", "dune", "cove", "pearl"];
+const WORDS: &[&str] = &[
+    "tide", "owl", "salt", "lamp", "reef", "kelp", "fern", "moss", "gale", "dune", "cove", "pearl",
+];
 
 /// A tiny deterministic generator (xorshift), seeded by the day.
 struct Rng(u64);
@@ -161,7 +163,9 @@ pub fn day_label(day: u64) -> String {
     let mp = (5 * doy + 2) / 153;
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
     format!("{} {d}", MONTHS[(m - 1) as usize])
 }
 
@@ -187,13 +191,27 @@ mod tests {
     fn every_day_is_a_fair_puzzle() {
         for day in 20_700..20_760 {
             let level: &'static Level = Box::leak(Box::new(daily(day)));
-            assert_eq!(daily(day).solution, level.solution, "the same day, the same puzzle");
-            assert_ne!(level.text(), level.goal_text().unwrap(), "day {day} changes nothing");
+            assert_eq!(
+                daily(day).solution,
+                level.solution,
+                "the same day, the same puzzle"
+            );
+            assert_ne!(
+                level.text(),
+                level.goal_text().unwrap(),
+                "day {day} changes nothing"
+            );
             let mut s = Session::custom(level, LEVELS.len() - 1);
             for k in parse_keys(level.solution) {
                 s.press(k);
             }
-            assert!(s.complete && s.cleared(), "day {day}: {} doesn't solve\n{}\n->\n{}", level.solution, level.text(), level.goal_text().unwrap());
+            assert!(
+                s.complete && s.cleared(),
+                "day {day}: {} doesn't solve\n{}\n->\n{}",
+                level.solution,
+                level.text(),
+                level.goal_text().unwrap()
+            );
             assert_eq!(s.stars(), 3);
         }
         assert_ne!(daily(1).goal, daily(2).goal);

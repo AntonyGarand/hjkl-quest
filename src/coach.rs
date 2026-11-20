@@ -61,7 +61,15 @@ fn advise(tokens: &[String], allowed: &str) -> Option<Habit> {
             if ways.is_empty() {
                 return None;
             }
-            return habit(format!("{} → {}", last.repeat(4), ways.join(" / ").replace(&format!("{n}{last}"), &format!("{{n}}{last}"))), format!("{}: one key per step. Jump instead: {}", steps(), ways.join(", ")));
+            return habit(
+                format!(
+                    "{} → {}",
+                    last.repeat(4),
+                    ways.join(" / ")
+                        .replace(&format!("{n}{last}"), &format!("{{n}}{last}"))
+                ),
+                format!("{}: one key per step. Jump instead: {}", steps(), ways.join(", ")),
+            );
         }
         ("j" | "k", 4..) => {
             let mut ways: Vec<String> = count(last).into_iter().collect();
@@ -74,7 +82,15 @@ fn advise(tokens: &[String], allowed: &str) -> Option<Habit> {
             if ways.is_empty() {
                 return None;
             }
-            return habit(format!("{} → {}", last.repeat(4), ways.join(" / ").replace(&format!("{n}{last}"), &format!("{{n}}{last}"))), format!("{}: one line at a time. Try {}", steps(), ways.join(", ")));
+            return habit(
+                format!(
+                    "{} → {}",
+                    last.repeat(4),
+                    ways.join(" / ")
+                        .replace(&format!("{n}{last}"), &format!("{{n}}{last}"))
+                ),
+                format!("{}: one line at a time. Try {}", steps(), ways.join(", ")),
+            );
         }
         ("x", 3..) => {
             let mut ways: Vec<String> = count("x").into_iter().collect();
@@ -84,10 +100,16 @@ fn advise(tokens: &[String], allowed: &str) -> Option<Habit> {
             if ways.is_empty() {
                 return None;
             }
-            return habit(format!("xxx → {}", ways.join(" / ").replace(&format!("{n}x"), "{n}x")), format!("{}: deleting one by one. Try {}", steps(), ways.join(", ")));
+            return habit(
+                format!("xxx → {}", ways.join(" / ").replace(&format!("{n}x"), "{n}x")),
+                format!("{}: deleting one by one. Try {}", steps(), ways.join(", ")),
+            );
         }
         ("dd", 3..) if knows("1") => {
-            return habit("dd dd dd → 3dd".into(), format!("dd {n} times in a row: {n}dd does it at once"));
+            return habit(
+                "dd dd dd → 3dd".into(),
+                format!("dd {n} times in a row: {n}dd does it at once"),
+            );
         }
         _ => {}
     }
@@ -106,9 +128,13 @@ fn advise(tokens: &[String], allowed: &str) -> Option<Habit> {
         _ => None,
     };
     if let (Some((better, what)), Some(prev)) = (pair, prev)
-        && knows(better) {
-            return habit(format!("{prev}{last} → {better}"), format!("{prev} then {last}: {better} does both ({what})"));
-        }
+        && knows(better)
+    {
+        return habit(
+            format!("{prev}{last} → {better}"),
+            format!("{prev} then {last}: {better} does both ({what})"),
+        );
+    }
 
     // A longer way to type a one-key command.
     let single = match last {
@@ -121,15 +147,30 @@ fn advise(tokens: &[String], allowed: &str) -> Option<Habit> {
         _ => None,
     };
     if let Some((better, what)) = single
-        && knows(better) {
-            return habit(format!("{last} → {better}"), format!("{last} is {better} in one key ({what})"));
-        }
+        && knows(better)
+    {
+        return habit(
+            format!("{last} → {better}"),
+            format!("{last} is {better} in one key ({what})"),
+        );
+    }
 
     // Two moves that cancel out.
-    let undoes = matches!((prev, last), (Some("l"), "h") | (Some("h"), "l") | (Some("j"), "k") | (Some("k"), "j") | (Some("w"), "b") | (Some("b"), "w"));
+    let undoes = matches!(
+        (prev, last),
+        (Some("l"), "h")
+            | (Some("h"), "l")
+            | (Some("j"), "k")
+            | (Some("k"), "j")
+            | (Some("w"), "b")
+            | (Some("b"), "w")
+    );
     if undoes {
         let prev = prev.unwrap_or_default();
-        return habit(format!("{prev}{last} → plan the jump"), format!("{prev}{last}: the second move undoes the first. Aim before you jump"));
+        return habit(
+            format!("{prev}{last} → plan the jump"),
+            format!("{prev}{last}: the second move undoes the first. Aim before you jump"),
+        );
     }
     None
 }

@@ -1,7 +1,11 @@
 //! The intro shown before an isle the first time (and on `:h`): what it
 //! teaches, and each command played out on a small looping example.
 
-use super::*;
+use super::{
+    FluentBuilder, FontWeight, GEM, Interactive, IntoElement, MONO, Mode, ParentElement, Pos, Rc, SELECT,
+    Screen, Styled, Ui, chapter_start, chip, dynamic, examples, format_keys, hex, hexa, is_boss, is_selected,
+    lessons, mode_color, px, scroll, story, text, view, vim, with_state,
+};
 
 pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
     dynamic(move || {
@@ -30,7 +34,13 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
                 .items_start()
                 .gap_3()
                 .child(view().min_w(px(110.0)).items_start().child(chip(*keys, 0xfff3b0)))
-                .child(text(*what).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.88)).flex_1())
+                .child(
+                    text(*what)
+                        .text_size(px(14.0))
+                        .line_height(px(20.0))
+                        .text_color(hexa(0xece6ff, 0.88))
+                        .flex_1(),
+                )
         });
         let goal = if !level.bugs().is_empty() {
             "Goal: squash every bug by landing on it. Each command moves them one tile; every 8 commands they hatch twins."
@@ -60,8 +70,16 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
             let keys: Vec<String> = level.banned().chars().map(|c| c.to_string()).collect();
             goal.push_str(&format!(" Banned here: {}.", keys.join(" ")));
         }
-        let cards = examples::examples(level.title).iter().map(move |&(text, keys)| example_card(ui, text, keys));
-        let heading = |label: &'static str| text(label).text_size(px(11.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.7)).mt(px(6.0));
+        let cards = examples::examples(level.title)
+            .iter()
+            .map(move |&(text, keys)| example_card(ui, text, keys));
+        let heading = |label: &'static str| {
+            text(label)
+                .text_size(px(11.0))
+                .letter_spacing(px(1.5))
+                .text_color(hexa(0xc9b8ff, 0.7))
+                .mt(px(6.0))
+        };
         let start = view()
             .px(px(18.0))
             .py(px(8.0))
@@ -69,10 +87,14 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
             .bg(hex(0xfff3b0))
             .cursor_pointer()
             .on_press(move || {
-                with_state(|s| s.close_intro());
+                with_state(super::State::close_intro);
                 ui.tick.update(|t| *t += 1);
             })
-            .child(text("Start").font_weight(FontWeight::BOLD).text_color(hex(0x1a1430)));
+            .child(
+                text("Start")
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(hex(0x1a1430)),
+            );
         let footer = view()
             .flex_row()
             .flex_wrap()
@@ -80,7 +102,11 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
             .gap_2()
             .mt(px(6.0))
             .child(chip("Enter", 0xfff3b0))
-            .child(text("start the isle").text_color(hexa(0xffffff, 0.65)).mr(px(10.0)))
+            .child(
+                text("start the isle")
+                    .text_color(hexa(0xffffff, 0.65))
+                    .mr(px(10.0)),
+            )
             .child(chip(":h", 0xfff3b0))
             .child(text("see this again").text_color(hexa(0xffffff, 0.65)))
             .child(view().flex_1())
@@ -88,9 +114,25 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
         let body = view()
             .p(px(24.0))
             .gap_3()
-            .child(text(level.chapter).text_size(px(12.0)).letter_spacing(px(1.5)).text_color(hexa(0xc9b8ff, 0.75)))
-            .child(text(format!("{}. {}", index + 1, level.title)).text_size(px(26.0)).font_weight(FontWeight::BOLD).text_color(hex(0xfff3b0)))
-            .child(text(level.story).text_size(px(14.0)).line_height(px(20.0)).italic().text_color(hexa(0xece6ff, 0.75)))
+            .child(
+                text(level.chapter)
+                    .text_size(px(12.0))
+                    .letter_spacing(px(1.5))
+                    .text_color(hexa(0xc9b8ff, 0.75)),
+            )
+            .child(
+                text(format!("{}. {}", index + 1, level.title))
+                    .text_size(px(26.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(hex(0xfff3b0)),
+            )
+            .child(
+                text(level.story)
+                    .text_size(px(14.0))
+                    .line_height(px(20.0))
+                    .italic()
+                    .text_color(hexa(0xece6ff, 0.75)),
+            )
             .child(speech.map(|(who, line)| {
                 let boss_speaking = !who.starts_with('🦉');
                 let color = if boss_speaking { 0xff9a6b } else { 0x9fd8ff };
@@ -103,20 +145,49 @@ pub(crate) fn intro_modal(ui: Ui) -> impl IntoElement {
                     .bg(hexa(color, 0.10))
                     .border_1()
                     .border_color(hexa(color, 0.4))
-                    .child(text(who).text_size(px(13.0)).font_weight(FontWeight::BOLD).text_color(hex(color)).min_w(px(80.0)))
-                    .child(text(format!("“{line}”")).text_size(px(14.0)).line_height(px(20.0)).text_color(hexa(0xece6ff, 0.9)).flex_1())
+                    .child(
+                        text(who)
+                            .text_size(px(13.0))
+                            .font_weight(FontWeight::BOLD)
+                            .text_color(hex(color))
+                            .min_w(px(80.0)),
+                    )
+                    .child(
+                        text(format!("“{line}”"))
+                            .text_size(px(14.0))
+                            .line_height(px(20.0))
+                            .text_color(hexa(0xece6ff, 0.9))
+                            .flex_1(),
+                    )
             }))
             .child(heading("YOU WILL LEARN"))
             .child(view().gap_2().children(lessons))
             .child(heading("SEE IT WORK"))
             .child(view().flex_row().flex_wrap().gap_3().children(cards))
-            .child(text(goal).text_size(px(13.0)).line_height(px(18.0)).text_color(hex(GEM)).mt(px(4.0)))
+            .child(
+                text(goal)
+                    .text_size(px(13.0))
+                    .line_height(px(18.0))
+                    .text_color(hex(GEM))
+                    .mt(px(4.0)),
+            )
             .child(
                 text({
                     let reqs = lessons::requirements(level.title);
-                    let must: Vec<&str> = reqs.iter().filter(|(_, p)| !lessons::optional(p)).map(|(l, _)| *l).collect();
-                    let may: Vec<&str> = reqs.iter().filter(|(_, p)| lessons::optional(p)).map(|(l, _)| *l).collect();
-                    let mut line = format!("To clear it, use: {}. Reaching the goal without them doesn't count.", must.join(" · "));
+                    let must: Vec<&str> = reqs
+                        .iter()
+                        .filter(|(_, p)| !lessons::optional(p))
+                        .map(|(l, _)| *l)
+                        .collect();
+                    let may: Vec<&str> = reqs
+                        .iter()
+                        .filter(|(_, p)| lessons::optional(p))
+                        .map(|(l, _)| *l)
+                        .collect();
+                    let mut line = format!(
+                        "To clear it, use: {}. Reaching the goal without them doesn't count.",
+                        must.join(" · ")
+                    );
                     if !may.is_empty() {
                         line.push_str(&format!(" Worth a try too: {}.", may.join(" · ")));
                     }
@@ -184,7 +255,11 @@ fn example_card(ui: Ui, text_with_cursor: &'static str, keys: &'static str) -> i
             let lit = e.search_highlights();
             let rows = e.lines.iter().enumerate().map(|(row, line)| {
                 let mut cells: Vec<(String, Cell)> = Vec::new();
-                let width = if row == e.cursor.row && e.cursor.col >= line.len() { line.len() + 1 } else { line.len().max(1) };
+                let width = if row == e.cursor.row && e.cursor.col >= line.len() {
+                    line.len() + 1
+                } else {
+                    line.len().max(1)
+                };
                 for col in 0..width {
                     let p = Pos { row, col };
                     let c = line.get(col).copied().unwrap_or(' ');
@@ -192,7 +267,10 @@ fn example_card(ui: Ui, text_with_cursor: &'static str, keys: &'static str) -> i
                         Cell::Cursor
                     } else if col < line.len() && is_selected(e, p) {
                         Cell::Selected
-                    } else if lit.iter().any(|(m, len)| m.row == row && col >= m.col && col < m.col + len) {
+                    } else if lit
+                        .iter()
+                        .any(|(m, len)| m.row == row && col >= m.col && col < m.col + len)
+                    {
                         Cell::Match
                     } else {
                         Cell::Plain
@@ -203,25 +281,29 @@ fn example_card(ui: Ui, text_with_cursor: &'static str, keys: &'static str) -> i
                         _ => cells.push((c.to_string(), cell)),
                     }
                 }
-                view().flex_row().children(cells.into_iter().map(move |(t, cell)| {
-                    let dark = cell == Cell::Cursor && !insert;
-                    let glyph = text(t)
-                        .font_family(MONO)
-                        .text_size(px(14.0))
-                        .line_height(px(19.0))
-                        .text_color(if dark { hex(0x1a1430) } else { hex(0xece6ff) });
-                    let base = view().child(glyph);
-                    match cell {
-                        Cell::Cursor if insert => base.border_l_1().border_color(hex(accent)),
-                        Cell::Cursor => base.bg(hex(accent)).rounded(px(2.0)),
-                        Cell::Selected => base.bg(hexa(SELECT, 0.75)),
-                        Cell::Match => base.bg(hexa(0xffd76b, 0.45)),
-                        Cell::Plain => base,
-                    }
-                }))
+                view()
+                    .flex_row()
+                    .children(cells.into_iter().map(move |(t, cell)| {
+                        let dark = cell == Cell::Cursor && !insert;
+                        let glyph = text(t)
+                            .font_family(MONO)
+                            .text_size(px(14.0))
+                            .line_height(px(19.0))
+                            .text_color(if dark { hex(0x1a1430) } else { hex(0xece6ff) });
+                        let base = view().child(glyph);
+                        match cell {
+                            Cell::Cursor if insert => base.border_l_1().border_color(hex(accent)),
+                            Cell::Cursor => base.bg(hex(accent)).rounded(px(2.0)),
+                            Cell::Selected => base.bg(hexa(SELECT, 0.75)),
+                            Cell::Match => base.bg(hexa(0xffd76b, 0.45)),
+                            Cell::Plain => base,
+                        }
+                    }))
             });
             let status = match e.mode {
-                _ if frame.message.is_some() && !matches!(e.mode, Mode::Command { .. }) => frame.message.clone().unwrap_or_default(),
+                _ if frame.message.is_some() && !matches!(e.mode, Mode::Command { .. }) => {
+                    frame.message.clone().unwrap_or_default()
+                }
                 Mode::Command { .. } => format!("{}{}", e.cmd_prefix(), e.cmdline),
                 Mode::Insert => "-- INSERT --".into(),
                 Mode::Replace => "-- REPLACE --".into(),
@@ -241,11 +323,33 @@ fn example_card(ui: Ui, text_with_cursor: &'static str, keys: &'static str) -> i
                         view()
                             .flex_row()
                             .flex_wrap()
-                            .child(text(format_keys(&all[..frame.typed])).font_family(MONO).text_size(px(14.0)).font_weight(FontWeight::BOLD).text_color(hex(0xffd76b)))
-                            .child(text(format_keys(&all[frame.typed..])).font_family(MONO).text_size(px(14.0)).text_color(hexa(0xffffff, 0.3))),
+                            .child(
+                                text(format_keys(&all[..frame.typed]))
+                                    .font_family(MONO)
+                                    .text_size(px(14.0))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(hex(0xffd76b)),
+                            )
+                            .child(
+                                text(format_keys(&all[frame.typed..]))
+                                    .font_family(MONO)
+                                    .text_size(px(14.0))
+                                    .text_color(hexa(0xffffff, 0.3)),
+                            ),
                     )
-                    .child(view().p(px(6.0)).rounded(px(6.0)).bg(hexa(0x05030f, 0.6)).children(rows))
-                    .child(text(status).font_family(MONO).text_size(px(11.5)).text_color(hex(accent))),
+                    .child(
+                        view()
+                            .p(px(6.0))
+                            .rounded(px(6.0))
+                            .bg(hexa(0x05030f, 0.6))
+                            .children(rows),
+                    )
+                    .child(
+                        text(status)
+                            .font_family(MONO)
+                            .text_size(px(11.5))
+                            .text_color(hex(accent)),
+                    ),
             )
         }))
 }

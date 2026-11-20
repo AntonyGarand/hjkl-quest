@@ -26,7 +26,19 @@ pub enum Sfx {
     Word,
 }
 
-const ALL: [Sfx; 11] = [Sfx::Step, Sfx::Edit, Sfx::Gem, Sfx::Bell, Sfx::Locked, Sfx::Complete, Sfx::Pad1, Sfx::Pad2, Sfx::Squash, Sfx::Hit, Sfx::Word];
+const ALL: [Sfx; 11] = [
+    Sfx::Step,
+    Sfx::Edit,
+    Sfx::Gem,
+    Sfx::Bell,
+    Sfx::Locked,
+    Sfx::Complete,
+    Sfx::Pad1,
+    Sfx::Pad2,
+    Sfx::Squash,
+    Sfx::Hit,
+    Sfx::Word,
+];
 
 thread_local! {
     static SOUNDS: RefCell<Vec<(Sfx, Sound)>> = const { RefCell::new(Vec::new()) };
@@ -64,7 +76,8 @@ fn tone(out: &mut [f32], start: f32, freq: f32, len: f32, gain: f32, decay: f32)
         let t = i as f32 / RATE as f32;
         let attack = (t / 0.004).min(1.0);
         let env = attack * (-t * decay).exp();
-        let w = (TAU * freq * t).sin() + 0.3 * (TAU * 2.0 * freq * t).sin() + 0.1 * (TAU * 3.0 * freq * t).sin();
+        let w =
+            (TAU * freq * t).sin() + 0.3 * (TAU * 2.0 * freq * t).sin() + 0.1 * (TAU * 3.0 * freq * t).sin();
         *slot += w * env * gain;
     }
 }
@@ -150,7 +163,11 @@ fn synth(sfx: Sfx) -> Vec<u8> {
         }
         Sfx::Pad1 | Sfx::Pad2 => {
             // A slow chord that swells in and out: the night air.
-            let chord: &[f32] = if sfx == Sfx::Pad1 { &[220.0, 261.63, 329.63, 440.0] } else { &[196.0, 246.94, 293.66, 392.0] };
+            let chord: &[f32] = if sfx == Sfx::Pad1 {
+                &[220.0, 261.63, 329.63, 440.0]
+            } else {
+                &[196.0, 246.94, 293.66, 392.0]
+            };
             let len = 4.8;
             let mut b = buffer(len);
             for (i, s) in b.iter_mut().enumerate() {
@@ -181,7 +198,7 @@ pub fn load_all() {
 }
 
 pub fn play(sfx: Sfx, volume: f32) {
-    if MUTED.with(|m| m.get()) {
+    if MUTED.with(std::cell::Cell::get) {
         return;
     }
     SOUNDS.with(|s| {
@@ -193,7 +210,7 @@ pub fn play(sfx: Sfx, volume: f32) {
 
 /// A step's pitch changes a little with where it lands, so walking sounds alive.
 pub fn step(variant: usize) {
-    if MUTED.with(|m| m.get()) {
+    if MUTED.with(std::cell::Cell::get) {
         return;
     }
     let rates = [1.0, 1.12, 0.94, 1.06, 0.89];
@@ -218,7 +235,7 @@ pub fn set_muted(muted: bool) {
 }
 
 pub fn muted() -> bool {
-    MUTED.with(|m| m.get())
+    MUTED.with(std::cell::Cell::get)
 }
 
 /// Plays the pad every four seconds, alternating chords.

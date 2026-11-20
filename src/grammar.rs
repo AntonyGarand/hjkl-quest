@@ -61,7 +61,10 @@ pub fn pair(token: &str) -> Option<(&'static str, &'static str)> {
         t = rest.get(rest.chars().next()?.len_utf8()..)?;
     }
     let t = t.trim_start_matches(|c: char| c.is_ascii_digit());
-    let (verb, rest) = VERBS.iter().filter_map(|(v, _)| Some((*v, t.strip_prefix(v)?))).max_by_key(|(v, _)| v.len())?;
+    let (verb, rest) = VERBS
+        .iter()
+        .filter_map(|(v, _)| Some((*v, t.strip_prefix(v)?)))
+        .max_by_key(|(v, _)| v.len())?;
     let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit());
     let last = &verb[verb.len() - 1..];
     if rest == last || (verb.len() == 2 && rest == verb) {
@@ -82,12 +85,20 @@ pub fn pair(token: &str) -> Option<(&'static str, &'static str)> {
                 'p' => "p",
                 _ => return None,
             };
-            return NOUNS.iter().map(|(n, _)| *n).find(|n| *n == format!("{side}{obj}")).map(|n| (verb, n));
+            return NOUNS
+                .iter()
+                .map(|(n, _)| *n)
+                .find(|n| *n == format!("{side}{obj}"))
+                .map(|n| (verb, n));
         }
         "N" => "n",
         r => r,
     };
-    NOUNS.iter().map(|(n, _)| *n).find(|n| *n == noun).map(|n| (verb, n))
+    NOUNS
+        .iter()
+        .map(|(n, _)| *n)
+        .find(|n| *n == noun)
+        .map(|n| (verb, n))
 }
 
 /// The key a learned pair is saved under.

@@ -92,7 +92,10 @@ pub struct Session {
 }
 
 /// The game's own `:` commands: always available, and free.
-pub const GAME_COMMANDS: &[&str] = &["q", "q!", "wq", "x", "levels", "menu", "e!", "restart", "r", "n", "next", "mute", "sound", "help", "h", "intro", "learn", "w"];
+pub const GAME_COMMANDS: &[&str] = &[
+    "q", "q!", "wq", "x", "levels", "menu", "e!", "restart", "r", "n", "next", "mute", "sound", "help", "h",
+    "intro", "learn", "w",
+];
 
 /// How a key of an unlock list reads: `w`, or `Ctrl-a`.
 pub fn key_name(c: char) -> String {
@@ -133,7 +136,11 @@ impl Session {
     /// the keys of campaign isle `index` and before.
     pub fn custom(level: &'static Level, index: usize) -> Self {
         let mut editor = Editor::new(level.text()).with_cursor(level.start());
-        editor.files = level.files().iter().map(|(n, t)| (n.to_string(), t.to_string())).collect();
+        editor.files = level
+            .files()
+            .iter()
+            .map(|(n, t)| (n.to_string(), t.to_string()))
+            .collect();
         let mut session = Session {
             index,
             level,
@@ -144,7 +151,11 @@ impl Session {
             sentries: level.sentries(),
             caught: 0,
             free: false,
-            frozen: level.frozen().into_iter().filter_map(|r| level.text().lines().nth(r).map(String::from)).collect(),
+            frozen: level
+                .frozen()
+                .into_iter()
+                .filter_map(|r| level.text().lines().nth(r).map(String::from))
+                .collect(),
             editor,
             gems: level.gems().into_iter().map(|p| (p, false)).collect(),
             keys: Vec::new(),
@@ -174,7 +185,7 @@ impl Session {
 
     /// Whether row `row` holds a frozen line.
     pub fn is_frozen(&self, row: usize) -> bool {
-        let line: String = self.editor.lines.get(row).map(|l| l.iter().collect()).unwrap_or_default();
+        let line: String = self.editor.lines.get(row).map_or_default(|l| l.iter().collect());
         self.frozen.contains(&line)
     }
 
@@ -194,7 +205,7 @@ impl Session {
 
     /// Whether this is a campaign isle (not a daily puzzle or a drill).
     pub fn in_campaign(&self) -> bool {
-        std::ptr::eq(self.level, &LEVELS[self.index])
+        std::ptr::eq(self.level, &raw const LEVELS[self.index])
     }
 
     pub fn par(&self) -> usize {
@@ -223,7 +234,11 @@ impl Session {
     pub fn goal_met(&self) -> bool {
         self.editor.buffer_name == crate::vim::ISLE
             && self.level().goal_text().is_none_or(|g| self.editor.text() == g)
-            && self.level().want_files().iter().all(|(n, t)| self.editor.files.get(*n).is_some_and(|f| f == t))
+            && self
+                .level()
+                .want_files()
+                .iter()
+                .all(|(n, t)| self.editor.files.get(*n).is_some_and(|f| f == t))
     }
 
     fn is_allowed(&self, key: Key) -> Result<(), char> {
@@ -252,17 +267,29 @@ impl Session {
                 // After an operator, i and a pick text objects, the
                 // operator's own key repeats it (dd) and g starts gg.
                 let op = pending.trim_end_matches(|c: char| c.is_ascii_digit());
-                let after_operator = op.ends_with(['d', 'c', 'y', '>', '<']) || op.ends_with("gu") || op.ends_with("gU") || op.ends_with("g~");
+                let after_operator = op.ends_with(['d', 'c', 'y', '>', '<'])
+                    || op.ends_with("gu")
+                    || op.ends_with("gU")
+                    || op.ends_with("g~");
                 if after_operator && (c == 'i' || c == 'a') {
                     return Ok(());
                 }
-                if self.editor.in_visual() && matches!(c, 'i' | 'a' | 'o' | 'd' | 'x' | 'y' | 'c' | 's' | 'u' | 'U' | '~' | 'J') {
+                if self.editor.in_visual()
+                    && matches!(
+                        c,
+                        'i' | 'a' | 'o' | 'd' | 'x' | 'y' | 'c' | 's' | 'u' | 'U' | '~' | 'J'
+                    )
+                {
                     return Ok(());
                 }
                 if self.allowed.contains(c) { Ok(()) } else { Err(c) }
             }
             other => {
-                if self.allowed.contains(other.raw()) { Ok(()) } else { Err(other.raw()) }
+                if self.allowed.contains(other.raw()) {
+                    Ok(())
+                } else {
+                    Err(other.raw())
+                }
             }
         }
     }
@@ -290,7 +317,9 @@ impl Session {
             };
             return Event::Locked(c);
         }
-        let opens_cmdline = key == Key::Char(':') && (self.editor.mode == Mode::Normal || self.editor.in_visual()) && self.editor.pending().is_empty();
+        let opens_cmdline = key == Key::Char(':')
+            && (self.editor.mode == Mode::Normal || self.editor.in_visual())
+            && self.editor.pending().is_empty();
         let in_cmdline = self.editor.mode == (Mode::Command { search: false });
         if opens_cmdline {
             self.cmd_start = Some(self.keys.len());
@@ -301,7 +330,10 @@ impl Session {
             let cmd = self.editor.cmdline.clone();
             self.editor.feed(Key::Esc);
             self.drop_cmdline_keys();
-            self.message = format!(":{cmd} needs ex commands, learned on isle {}. Try :e! :q :n :h :mute", crate::levels::ex_isle());
+            self.message = format!(
+                ":{cmd} needs ex commands, learned on isle {}. Try :e! :q :n :h :mute",
+                crate::levels::ex_isle()
+            );
             return Event::Locked(':');
         }
         self.keys.push(key);
@@ -335,8 +367,10 @@ impl Session {
         self.tip.clear();
         // Landing on a trap throws the wisp back where it came from; the
         // keys still count.
-        if !matches!(self.editor.mode, Mode::Command { .. } | Mode::Insert | Mode::Replace)
-            && self.editor.pending().is_empty()
+        if !matches!(
+            self.editor.mode,
+            Mode::Command { .. } | Mode::Insert | Mode::Replace
+        ) && self.editor.pending().is_empty()
             && self.editor.cursor != cursor
             && self.traps.contains(&self.editor.cursor)
         {
@@ -415,11 +449,14 @@ impl Session {
     }
 
     /// A command was completed: a bug the cursor stands on is squashed;
-    /// the others crawl a tile, and every HATCH_EVERY commands each hatches
+    /// the others crawl a tile, and every `HATCH_EVERY` commands each hatches
     /// a twin.
     fn crawl(&mut self) -> Option<Pos> {
         // Typing a command line or text is one command, done when it ends.
-        let typing = matches!(self.editor.mode, Mode::Command { .. } | Mode::Insert | Mode::Replace | Mode::Confirm);
+        let typing = matches!(
+            self.editor.mode,
+            Mode::Command { .. } | Mode::Insert | Mode::Replace | Mode::Confirm
+        );
         if self.bugs.is_empty() || !self.editor.pending().is_empty() || typing {
             return None;
         }
@@ -433,12 +470,19 @@ impl Session {
         let lines = &self.editor.lines;
         let traps = &self.traps;
         for bug in &mut self.bugs {
-            let len = lines.get(bug.at.row).map_or(0, |l| l.len());
+            let len = lines.get(bug.at.row).map_or(0, Vec::len);
             if len == 0 {
                 continue;
             }
             bug.at.col = bug.at.col.min(len - 1);
-            let open = |col: isize| col >= 0 && (col as usize) < len && !traps.contains(&Pos { row: bug.at.row, col: col as usize });
+            let open = |col: isize| {
+                col >= 0
+                    && (col as usize) < len
+                    && !traps.contains(&Pos {
+                        row: bug.at.row,
+                        col: col as usize,
+                    })
+            };
             let ahead = bug.at.col as isize + bug.dir as isize;
             if !open(ahead) {
                 bug.dir = -bug.dir;
@@ -450,8 +494,15 @@ impl Session {
         }
         caught += squash(&mut self.bugs);
         self.crawled += 1;
-        if self.crawled % HATCH_EVERY == 0 {
-            let twins: Vec<Bug> = self.bugs.iter().map(|b| Bug { at: b.at, dir: -b.dir }).collect();
+        if self.crawled.is_multiple_of(HATCH_EVERY) {
+            let twins: Vec<Bug> = self
+                .bugs
+                .iter()
+                .map(|b| Bug {
+                    at: b.at,
+                    dir: -b.dir,
+                })
+                .collect();
             for twin in twins {
                 if self.bugs.len() < MAX_BUGS {
                     self.bugs.push(twin);
@@ -468,7 +519,10 @@ impl Session {
     /// Whether a whole command was just done (not a half-typed one, and
     /// not in the middle of typing text or a command line).
     fn command_done(&self) -> bool {
-        let typing = matches!(self.editor.mode, Mode::Command { .. } | Mode::Insert | Mode::Replace | Mode::Confirm);
+        let typing = matches!(
+            self.editor.mode,
+            Mode::Command { .. } | Mode::Insert | Mode::Replace | Mode::Confirm
+        );
         self.editor.pending().is_empty() && !typing
     }
 
@@ -482,7 +536,8 @@ impl Session {
         let walked_in = self.sentries.iter().any(|s| s.at == at);
         let lines = &self.editor.lines;
         for s in &mut self.sentries {
-            let open = |row: isize| row >= 0 && (row as usize) < lines.len() && s.at.col < lines[row as usize].len();
+            let open =
+                |row: isize| row >= 0 && (row as usize) < lines.len() && s.at.col < lines[row as usize].len();
             if !open(s.at.row as isize + s.dir as isize) {
                 s.dir = -s.dir;
             }
@@ -507,7 +562,8 @@ impl Session {
             return false;
         }
         let gems = &self.gems;
-        self.fading.retain(|(p, _)| gems.iter().any(|(g, got)| g == p && !got));
+        self.fading
+            .retain(|(p, _)| gems.iter().any(|(g, got)| g == p && !got));
         for (_, left) in &mut self.fading {
             *left = left.saturating_sub(1);
         }
@@ -553,7 +609,11 @@ impl Session {
             && self.editor.pending().is_empty()
         {
             self.complete = true;
-            self.missed = if self.free { Vec::new() } else { self.lesson_left().into_iter().map(String::from).collect() };
+            self.missed = if self.free {
+                Vec::new()
+            } else {
+                self.lesson_left().into_iter().map(String::from).collect()
+            };
         }
         self.complete
     }
@@ -571,7 +631,12 @@ mod tests {
             assert!(!s.complete, "level {i} {} starts complete", level.title);
             let keys = parse_keys(level.solution);
             for (k, &key) in keys.iter().enumerate() {
-                assert!(!s.complete, "level {i} {} completes early after {}", level.title, format_keys(&keys[..k]));
+                assert!(
+                    !s.complete,
+                    "level {i} {} completes early after {}",
+                    level.title,
+                    format_keys(&keys[..k])
+                );
                 let event = s.press(key);
                 assert!(
                     !matches!(event, Event::Locked(_) | Event::Bell | Event::Trapped(_)),
@@ -591,7 +656,13 @@ mod tests {
                 s.editor.cursor,
                 s.editor.text()
             );
-            assert!(s.missed.is_empty(), "level {i} {}: the golf line skips the lesson: {:?} (used {:?})", level.title, s.missed, s.used);
+            assert!(
+                s.missed.is_empty(),
+                "level {i} {}: the golf line skips the lesson: {:?} (used {:?})",
+                level.title,
+                s.missed,
+                s.used
+            );
             assert_eq!(s.keys.len(), level.par());
             assert_eq!(s.stars(), 3);
         }
@@ -601,7 +672,12 @@ mod tests {
     fn marks_lie_on_the_map() {
         for level in LEVELS {
             let e = Editor::new(level.text());
-            for p in level.gems().into_iter().chain(level.traps()).chain([level.start()]) {
+            for p in level
+                .gems()
+                .into_iter()
+                .chain(level.traps())
+                .chain([level.start()])
+            {
                 assert!(
                     p.row < e.lines.len() && (p.col < e.line_len(p.row) || p.col == 0),
                     "{}: mark {p:?} is off the map",
@@ -681,7 +757,11 @@ mod tests {
         assert_eq!(s.editor.cursor, Pos { row: 0, col: 15 });
         for level in LEVELS {
             for t in level.traps() {
-                assert!(!level.gems().contains(&t) && level.start() != t, "{}: trap on a mark", level.title);
+                assert!(
+                    !level.gems().contains(&t) && level.start() != t,
+                    "{}: trap on a mark",
+                    level.title
+                );
             }
         }
     }
@@ -719,7 +799,10 @@ mod tests {
 
     #[test]
     fn a_keystroke_budget_ends_the_isle() {
-        let i = LEVELS.iter().position(|l| l.title == "Edge of the World").unwrap();
+        let i = LEVELS
+            .iter()
+            .position(|l| l.title == "Edge of the World")
+            .unwrap();
         let mut s = Session::new(i);
         let mut last = Event::None;
         for k in 0..10 {
@@ -750,7 +833,10 @@ mod tests {
             last = s.press(k);
         }
         assert_eq!(last, Event::Caught(Pos { row: 3, col: 6 }));
-        assert_eq!((s.caught, s.editor.cursor), (1, LEVELS[isle("Night Watch")].start()));
+        assert_eq!(
+            (s.caught, s.editor.cursor),
+            (1, LEVELS[isle("Night Watch")].start())
+        );
     }
 
     #[test]

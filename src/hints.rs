@@ -94,7 +94,11 @@ pub fn hint(pending: &str, visual: bool, allowed: &str, objects: bool) -> Option
             None => "a count — then a motion or operator: it repeats".into(),
         };
         let next = match register {
-            Some(_) => vec![("yy y{motion}".into(), "copy into it"), ("dd d{motion}".into(), "cut into it"), ("p P".into(), "paste from it")],
+            Some(_) => vec![
+                ("yy y{motion}".into(), "copy into it"),
+                ("dd d{motion}".into(), "cut into it"),
+                ("p P".into(), "paste from it"),
+            ],
             None => motions(&learned),
         };
         return Some(Hint { title, next });
@@ -103,22 +107,40 @@ pub fn hint(pending: &str, visual: bool, allowed: &str, objects: bool) -> Option
     let op_end = p.trim_end_matches(|c: char| c.is_ascii_digit());
     if let Some((op, what)) = OPERATORS.iter().find(|(op, _)| *op == op_end) {
         let mut next = motions(&learned);
-        let line = if op.len() == 2 { format!("{op}{}", &op[1..]) } else { format!("{op}{op}") };
+        let line = if op.len() == 2 {
+            format!("{op}{}", &op[1..])
+        } else {
+            format!("{op}{op}")
+        };
         next.insert(0, (line, "the whole line"));
         if objects {
             next.push(("i{obj} a{obj}".into(), "a text object: iw, a(, i\", ap…"));
         }
-        return Some(Hint { title: format!("{op} — {what}: then where to"), next });
+        return Some(Hint {
+            title: format!("{op} — {what}: then where to"),
+            next,
+        });
     }
     // An operator and i or a (or i / a in visual mode): a text object.
-    let obj = p.strip_suffix('i').map(|o| (o, "inside")).or_else(|| p.strip_suffix('a').map(|o| (o, "around")));
+    let obj = p
+        .strip_suffix('i')
+        .map(|o| (o, "inside"))
+        .or_else(|| p.strip_suffix('a').map(|o| (o, "around")));
     if let Some((op, side)) = obj
         && (OPERATORS.iter().any(|(o, _)| *o == op) || (visual && op.is_empty()))
     {
         let next = OBJECTS.iter().map(|(k, w)| (k.to_string(), *w)).collect();
-        return Some(Hint { title: format!("{p} — {side}: which object?"), next });
+        return Some(Hint {
+            title: format!("{p} — {side}: which object?"),
+            next,
+        });
     }
-    let simple = |title: &str| Some(Hint { title: title.into(), next: Vec::new() });
+    let simple = |title: &str| {
+        Some(Hint {
+            title: title.into(),
+            next: Vec::new(),
+        })
+    };
     match p.chars().last()? {
         _ if p.ends_with('g') && p.len() == 1 => Some(Hint {
             title: "g — more commands".into(),
@@ -148,7 +170,9 @@ pub fn hint(pending: &str, visual: bool, allowed: &str, objects: bool) -> Option
                 't' => "jump to just before",
                 _ => "jump back to just after",
             };
-            simple(&format!("{c} — type a character to {way}, on this line (; repeats, , reverses)"))
+            simple(&format!(
+                "{c} — type a character to {way}, on this line (; repeats, , reverses)"
+            ))
         }
         'r' => simple("r — type the character to put here"),
         'm' => simple("m — name the mark: a to z"),
@@ -161,7 +185,11 @@ pub fn hint(pending: &str, visual: bool, allowed: &str, objects: bool) -> Option
 }
 
 fn motions(learned: &impl Fn(char) -> bool) -> Vec<(String, &'static str)> {
-    MOTIONS.iter().filter(|(_, _, need)| learned(*need)).map(|(k, w, _)| (k.to_string(), *w)).collect()
+    MOTIONS
+        .iter()
+        .filter(|(_, _, need)| learned(*need))
+        .map(|(k, w, _)| (k.to_string(), *w))
+        .collect()
 }
 
 #[cfg(test)]
@@ -180,7 +208,12 @@ mod tests {
         assert_eq!(h.next[0].0, "gUU");
         assert!(h.next.iter().any(|(k, _)| k.starts_with("i{")));
         // A register and counts in front.
-        assert!(hint("\"a3d2", false, "w", false).unwrap().title.starts_with("d —"));
+        assert!(
+            hint("\"a3d2", false, "w", false)
+                .unwrap()
+                .title
+                .starts_with("d —")
+        );
     }
 
     #[test]
@@ -188,10 +221,21 @@ mod tests {
         assert!(hint("ci", false, "", true).unwrap().title.contains("inside"));
         assert!(hint("a", true, "", true).unwrap().title.contains("around"));
         assert!(hint("\"", false, "", false).unwrap().title.contains("register"));
-        assert!(hint("\"a", false, "", false).unwrap().title.contains("register a"));
+        assert!(
+            hint("\"a", false, "", false)
+                .unwrap()
+                .title
+                .contains("register a")
+        );
         assert!(hint("f", false, "", false).unwrap().title.contains("character"));
         assert!(hint("3", false, "hjkl", false).unwrap().title.contains("count"));
-        assert!(hint("g", false, "", false).unwrap().next.iter().any(|(k, _)| k == "gg"));
+        assert!(
+            hint("g", false, "", false)
+                .unwrap()
+                .next
+                .iter()
+                .any(|(k, _)| k == "gg")
+        );
         assert_eq!(hint("z", false, "", false), None);
     }
 }
