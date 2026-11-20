@@ -6,8 +6,10 @@ use std::f32::consts::TAU;
 
 use nsh_core::prelude::*;
 
+/// Samples per second.
 const RATE: u32 = 22_050;
 
+/// A sound effect (or a chord of the ambient pad).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Sfx {
     Step,
@@ -86,102 +88,110 @@ fn buffer(seconds: f32) -> Vec<f32> {
     vec![0.0; (seconds * RATE as f32) as usize]
 }
 
+/// A note, as `tone` plays it: start, frequency, length, gain and decay.
+type Note = (f32, f32, f32, f32, f32);
+
+/// `seconds` of sound holding `notes`.
+fn notes(seconds: f32, notes: &[Note]) -> Vec<f32> {
+    let mut b = buffer(seconds);
+    for &(start, freq, len, gain, decay) in notes {
+        tone(&mut b, start, freq, len, gain, decay);
+    }
+    b
+}
+
+/// `seconds` of sound with `freqs` rising one after another, `gap` apart;
+/// each note is (length, gain, decay).
+fn arpeggio(seconds: f32, freqs: &[f32], gap: f32, (len, gain, decay): (f32, f32, f32)) -> Vec<f32> {
+    let mut b = buffer(seconds);
+    for (k, f) in freqs.iter().enumerate() {
+        tone(&mut b, k as f32 * gap, *f, len, gain, decay);
+    }
+    b
+}
+
+/// A pitch falling from `high + low` towards `low` at rate `fall`, fading
+/// at rate `fade` from `gain`.
+fn sweep(b: &mut [f32], (high, fall, low): (f32, f32, f32), fade: f32, gain: f32) {
+    for (i, s) in b.iter_mut().enumerate() {
+        let t = i as f32 / RATE as f32;
+        let f = high * (-t * fall).exp() + low;
+        *s = (TAU * f * t).sin() * (-t * fade).exp() * gain;
+    }
+}
+
+/// A soft, filtered click of noise: chiselling stone.
+fn chisel() -> Vec<f32> {
+    let mut b = buffer(0.08);
+    let mut seed = 12345u32;
+    let mut last = 0.0;
+    for (i, s) in b.iter_mut().enumerate() {
+        seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        let noise = ((seed >> 16) as f32 / 32_768.0) - 1.0;
+        last = last * 0.75 + noise * 0.25;
+        let t = i as f32 / RATE as f32;
+        *s = last * (-t * 50.0).exp() * 0.9;
+    }
+    tone(&mut b, 0.0, 330.0, 0.08, 0.2, 40.0);
+    b
+}
+
+/// A slow chord that swells in and out: the night air.
+fn pad(chord: &[f32]) -> Vec<f32> {
+    let len = 4.8;
+    let mut b = buffer(len);
+    for (i, s) in b.iter_mut().enumerate() {
+        let t = i as f32 / RATE as f32;
+        let env = (t / 1.6).min(1.0) * ((len - t) / 1.8).clamp(0.0, 1.0);
+        let mut v = 0.0;
+        for (k, f) in chord.iter().enumerate() {
+            let detune = 1.0 + 0.002 * (k as f32 - 1.5);
+            v += (TAU * f * detune * t).sin() + 0.15 * (TAU * 2.0 * f * t + k as f32).sin();
+        }
+        *s = v * env * 0.07;
+    }
+    b
+}
+
 fn synth(sfx: Sfx) -> Vec<u8> {
     let samples = match sfx {
-        Sfx::Step => {
-            let mut b = buffer(0.09);
-            tone(&mut b, 0.0, 740.0, 0.09, 0.25, 45.0);
-            b
-        }
-        Sfx::Edit => {
-            // A soft, filtered click of noise: chiselling stone.
-            let mut b = buffer(0.08);
-            let mut seed = 12345u32;
-            let mut last = 0.0;
-            for (i, s) in b.iter_mut().enumerate() {
-                seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-                let noise = ((seed >> 16) as f32 / 32_768.0) - 1.0;
-                last = last * 0.75 + noise * 0.25;
-                let t = i as f32 / RATE as f32;
-                *s = last * (-t * 50.0).exp() * 0.9;
-            }
-            tone(&mut b, 0.0, 330.0, 0.08, 0.2, 40.0);
-            b
-        }
-        Sfx::Gem => {
-            let mut b = buffer(0.7);
-            for (k, f) in [1046.5, 1318.5, 1568.0, 2093.0].iter().enumerate() {
-                tone(&mut b, k as f32 * 0.06, *f, 0.5, 0.18, 7.0);
-            }
-            b
-        }
-        Sfx::Bell => {
-            let mut b = buffer(0.15);
-            tone(&mut b, 0.0, 196.0, 0.15, 0.3, 25.0);
-            b
-        }
-        Sfx::Locked => {
-            let mut b = buffer(0.22);
-            tone(&mut b, 0.0, 233.0, 0.1, 0.25, 30.0);
-            tone(&mut b, 0.09, 175.0, 0.13, 0.25, 25.0);
-            b
-        }
+        Sfx::Step => notes(0.09, &[(0.0, 740.0, 0.09, 0.25, 45.0)]),
+        Sfx::Edit => chisel(),
+        Sfx::Gem => arpeggio(0.7, &[1046.5, 1318.5, 1568.0, 2093.0], 0.06, (0.5, 0.18, 7.0)),
+        Sfx::Bell => notes(0.15, &[(0.0, 196.0, 0.15, 0.3, 25.0)]),
+        Sfx::Locked => notes(
+            0.22,
+            &[(0.0, 233.0, 0.1, 0.25, 30.0), (0.09, 175.0, 0.13, 0.25, 25.0)],
+        ),
         Sfx::Complete => {
-            let mut b = buffer(1.6);
-            for (k, f) in [523.25, 659.25, 783.99, 1046.5, 1318.5].iter().enumerate() {
-                tone(&mut b, k as f32 * 0.11, *f, 1.2, 0.17, 3.5);
-            }
+            let mut b = arpeggio(
+                1.6,
+                &[523.25, 659.25, 783.99, 1046.5, 1318.5],
+                0.11,
+                (1.2, 0.17, 3.5),
+            );
             tone(&mut b, 0.55, 261.63, 1.0, 0.15, 2.5);
             b
         }
         Sfx::Squash => {
-            let mut b = buffer(0.22);
             // A falling chirp, then a pop.
-            for (i, s) in b.iter_mut().enumerate() {
-                let t = i as f32 / RATE as f32;
-                let f = 900.0 * (-t * 9.0).exp() + 120.0;
-                *s = (TAU * f * t).sin() * (-t * 18.0).exp() * 0.35;
-            }
+            let mut b = buffer(0.22);
+            sweep(&mut b, (900.0, 9.0, 120.0), 18.0, 0.35);
             tone(&mut b, 0.07, 1400.0, 0.08, 0.15, 60.0);
             b
         }
         Sfx::Hit => {
             let mut b = buffer(0.35);
-            for (i, s) in b.iter_mut().enumerate() {
-                let t = i as f32 / RATE as f32;
-                let f = 110.0 * (-t * 4.0).exp() + 45.0;
-                *s = (TAU * f * t).sin() * (-t * 9.0).exp() * 0.6;
-            }
+            sweep(&mut b, (110.0, 4.0, 45.0), 9.0, 0.6);
             tone(&mut b, 0.0, 220.0, 0.12, 0.12, 30.0);
             b
         }
-        Sfx::Word => {
-            let mut b = buffer(0.4);
-            tone(&mut b, 0.0, 1174.7, 0.3, 0.15, 12.0);
-            tone(&mut b, 0.08, 1568.0, 0.3, 0.15, 10.0);
-            b
-        }
-        Sfx::Pad1 | Sfx::Pad2 => {
-            // A slow chord that swells in and out: the night air.
-            let chord: &[f32] = if sfx == Sfx::Pad1 {
-                &[220.0, 261.63, 329.63, 440.0]
-            } else {
-                &[196.0, 246.94, 293.66, 392.0]
-            };
-            let len = 4.8;
-            let mut b = buffer(len);
-            for (i, s) in b.iter_mut().enumerate() {
-                let t = i as f32 / RATE as f32;
-                let env = (t / 1.6).min(1.0) * ((len - t) / 1.8).clamp(0.0, 1.0);
-                let mut v = 0.0;
-                for (k, f) in chord.iter().enumerate() {
-                    let detune = 1.0 + 0.002 * (k as f32 - 1.5);
-                    v += (TAU * f * detune * t).sin() + 0.15 * (TAU * 2.0 * f * t + k as f32).sin();
-                }
-                *s = v * env * 0.07;
-            }
-            b
-        }
+        Sfx::Word => notes(
+            0.4,
+            &[(0.0, 1174.7, 0.3, 0.15, 12.0), (0.08, 1568.0, 0.3, 0.15, 10.0)],
+        ),
+        Sfx::Pad1 => pad(&[220.0, 261.63, 329.63, 440.0]),
+        Sfx::Pad2 => pad(&[196.0, 246.94, 293.66, 392.0]),
     };
     wav(&samples)
 }
@@ -197,6 +207,7 @@ pub fn load_all() {
     }
 }
 
+/// Plays `sfx` at `volume` (0 to 1), unless muted.
 pub fn play(sfx: Sfx, volume: f32) {
     if MUTED.with(std::cell::Cell::get) {
         return;
@@ -221,6 +232,7 @@ pub fn step(variant: usize) {
     });
 }
 
+/// Mutes or unmutes every sound; muting stops the pad.
 pub fn set_muted(muted: bool) {
     MUTED.with(|m| m.set(muted));
     if muted {
@@ -234,6 +246,7 @@ pub fn set_muted(muted: bool) {
     }
 }
 
+/// Whether sound is off.
 pub fn muted() -> bool {
     MUTED.with(std::cell::Cell::get)
 }

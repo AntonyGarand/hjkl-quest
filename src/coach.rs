@@ -9,6 +9,7 @@ pub struct Habit {
     pub tip: String,
 }
 
+/// Watches one run's commands for slow habits.
 #[derive(Debug, Default, Clone)]
 pub struct Coach {
     /// Completed normal-mode commands, as typed (`l`, `4j`, `dw`, `i`).
@@ -36,98 +37,67 @@ fn run_of(tokens: &[String]) -> usize {
     tokens.iter().rev().take_while(|t| *t == last).count()
 }
 
+/// Faster ways to repeat a step: (the step, the keys needed, the way).
+const JUMPS: &[(&str, &str, &str)] = &[
+    ("l", "we", "w or e"),
+    ("h", "b", "b"),
+    ("l", "fF", "f{c}"),
+    ("h", "fF", "F{c}"),
+    ("j", "{}", "}"),
+    ("k", "{}", "{"),
+    ("j", "G", "{n}G"),
+    ("k", "G", "{n}G"),
+    ("x", "dwe", "dw or de"),
+];
+
+/// A command, then one that a single key does with it: (the firsts, the
+/// second, the single key, what it does).
+const PAIRS: &[(&[&str], &str, &str, &str)] = &[
+    (&["0", "^"], "i", "I", "insert at the first non-blank"),
+    (&["$"], "a", "A", "append at the end of the line"),
+    (&["x"], "i", "s", "delete a character and insert"),
+    (&["dw"], "i", "cw", "change the word"),
+    (&["de"], "i", "ce", "change to the end of the word"),
+    (&["d$", "D"], "a", "C", "change to the end of the line"),
+    (&["dd"], "O", "S", "change the whole line"),
+    (&["k"], "o", "O", "open a line above"),
+    (&["h"], "x", "X", "delete the character before the cursor"),
+];
+
+/// A longer way to type a one-key command: (the long way, the key, what
+/// it does).
+const SINGLES: &[(&str, &str, &str)] = &[
+    ("d$", "D", "delete to the end of the line"),
+    ("c$", "C", "change to the end of the line"),
+    ("dl", "x", "delete the character"),
+    ("dh", "X", "delete the character before"),
+    ("cl", "s", "substitute the character"),
+    ("cc", "S", "change the line"),
+];
+
+/// Two moves that cancel out.
+const UNDOES: &[(&str, &str)] = &[
+    ("l", "h"),
+    ("h", "l"),
+    ("j", "k"),
+    ("k", "j"),
+    ("w", "b"),
+    ("b", "w"),
+];
+
 fn advise(tokens: &[String], allowed: &str) -> Option<Habit> {
     let knows = |keys: &str| keys.chars().all(|c| allowed.contains(c));
     let last = tokens.last()?.as_str();
+    // A run of steps can't also end one of the patterns below.
+    if let Some(habit) = repeated(last, run_of(tokens), &knows) {
+        return Some(habit);
+    }
     let prev = tokens.len().checked_sub(2).map(|i| tokens[i].as_str());
     let habit = |label: String, tip: String| Some(Habit { label, tip });
-
-    // The same step over and over.
-    let n = run_of(tokens);
-    let steps = || last.repeat(n);
-    let count = |k: &str| knows("123456789").then(|| format!("{n}{k}"));
-    match (last, n) {
-        ("l" | "h", 4..) => {
-            let mut ways: Vec<String> = count(last).into_iter().collect();
-            if last == "l" && knows("we") {
-                ways.push("w or e".into());
-            }
-            if last == "h" && knows("b") {
-                ways.push("b".into());
-            }
-            if knows("fF") {
-                ways.push(if last == "l" { "f{c}" } else { "F{c}" }.into());
-            }
-            if ways.is_empty() {
-                return None;
-            }
-            return habit(
-                format!(
-                    "{} → {}",
-                    last.repeat(4),
-                    ways.join(" / ")
-                        .replace(&format!("{n}{last}"), &format!("{{n}}{last}"))
-                ),
-                format!("{}: one key per step. Jump instead: {}", steps(), ways.join(", ")),
-            );
-        }
-        ("j" | "k", 4..) => {
-            let mut ways: Vec<String> = count(last).into_iter().collect();
-            if knows("{}") {
-                ways.push(if last == "j" { "}" } else { "{" }.into());
-            }
-            if knows("G") {
-                ways.push("{n}G".into());
-            }
-            if ways.is_empty() {
-                return None;
-            }
-            return habit(
-                format!(
-                    "{} → {}",
-                    last.repeat(4),
-                    ways.join(" / ")
-                        .replace(&format!("{n}{last}"), &format!("{{n}}{last}"))
-                ),
-                format!("{}: one line at a time. Try {}", steps(), ways.join(", ")),
-            );
-        }
-        ("x", 3..) => {
-            let mut ways: Vec<String> = count("x").into_iter().collect();
-            if knows("dwe") {
-                ways.push("dw or de".into());
-            }
-            if ways.is_empty() {
-                return None;
-            }
-            return habit(
-                format!("xxx → {}", ways.join(" / ").replace(&format!("{n}x"), "{n}x")),
-                format!("{}: deleting one by one. Try {}", steps(), ways.join(", ")),
-            );
-        }
-        ("dd", 3..) if knows("1") => {
-            return habit(
-                "dd dd dd → 3dd".into(),
-                format!("dd {n} times in a row: {n}dd does it at once"),
-            );
-        }
-        _ => {}
-    }
-
-    // A command and the one after it that a single key does.
-    let pair = match (prev, last) {
-        (Some("0" | "^"), "i") => Some(("I", "insert at the first non-blank")),
-        (Some("$"), "a") => Some(("A", "append at the end of the line")),
-        (Some("x"), "i") => Some(("s", "delete a character and insert")),
-        (Some("dw"), "i") => Some(("cw", "change the word")),
-        (Some("de"), "i") => Some(("ce", "change to the end of the word")),
-        (Some("d$" | "D"), "a") => Some(("C", "change to the end of the line")),
-        (Some("dd"), "O") => Some(("S", "change the whole line")),
-        (Some("k"), "o") => Some(("O", "open a line above")),
-        (Some("h"), "x") => Some(("X", "delete the character before the cursor")),
-        _ => None,
-    };
-    if let (Some((better, what)), Some(prev)) = (pair, prev)
+    if let Some(prev) = prev
+        && let Some((_, _, better, what)) = PAIRS
+            .iter()
+            .find(|(firsts, second, ..)| firsts.contains(&prev) && *second == last)
         && knows(better)
     {
         return habit(
@@ -135,18 +105,7 @@ fn advise(tokens: &[String], allowed: &str) -> Option<Habit> {
             format!("{prev} then {last}: {better} does both ({what})"),
         );
     }
-
-    // A longer way to type a one-key command.
-    let single = match last {
-        "d$" => Some(("D", "delete to the end of the line")),
-        "c$" => Some(("C", "change to the end of the line")),
-        "dl" => Some(("x", "delete the character")),
-        "dh" => Some(("X", "delete the character before")),
-        "cl" => Some(("s", "substitute the character")),
-        "cc" => Some(("S", "change the line")),
-        _ => None,
-    };
-    if let Some((better, what)) = single
+    if let Some((_, better, what)) = SINGLES.iter().find(|(long, ..)| *long == last)
         && knows(better)
     {
         return habit(
@@ -154,25 +113,50 @@ fn advise(tokens: &[String], allowed: &str) -> Option<Habit> {
             format!("{last} is {better} in one key ({what})"),
         );
     }
-
-    // Two moves that cancel out.
-    let undoes = matches!(
-        (prev, last),
-        (Some("l"), "h")
-            | (Some("h"), "l")
-            | (Some("j"), "k")
-            | (Some("k"), "j")
-            | (Some("w"), "b")
-            | (Some("b"), "w")
-    );
-    if undoes {
-        let prev = prev.unwrap_or_default();
+    if let Some(prev) = prev
+        && UNDOES.contains(&(prev, last))
+    {
         return habit(
             format!("{prev}{last} → plan the jump"),
             format!("{prev}{last}: the second move undoes the first. Aim before you jump"),
         );
     }
     None
+}
+
+/// The same step `last`, `n` times over: the faster ways the player knows.
+fn repeated(last: &str, n: usize, knows: &dyn Fn(&str) -> bool) -> Option<Habit> {
+    let (min, what) = match last {
+        "l" | "h" => (4, "one key per step. Jump instead:"),
+        "j" | "k" => (4, "one line at a time. Try"),
+        "x" => (3, "deleting one by one. Try"),
+        "dd" if n >= 3 && knows("1") => {
+            return Some(Habit {
+                label: "dd dd dd → 3dd".into(),
+                tip: format!("dd {n} times in a row: {n}dd does it at once"),
+            });
+        }
+        _ => return None,
+    };
+    if n < min {
+        return None;
+    }
+    let count = knows("123456789").then(|| format!("{n}{last}"));
+    let jumps = JUMPS
+        .iter()
+        .filter(|(step, keys, _)| *step == last && knows(keys))
+        .map(|(_, _, way)| (*way).to_string());
+    let ways: Vec<String> = count.into_iter().chain(jumps).collect();
+    if ways.is_empty() {
+        return None;
+    }
+    let label = ways
+        .join(" / ")
+        .replace(&format!("{n}{last}"), &format!("{{n}}{last}"));
+    Some(Habit {
+        label: format!("{} → {label}", last.repeat(min)),
+        tip: format!("{}: {what} {}", last.repeat(n), ways.join(", ")),
+    })
 }
 
 #[cfg(test)]

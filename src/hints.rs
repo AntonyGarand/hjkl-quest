@@ -10,6 +10,7 @@ pub struct Hint {
     pub next: Vec<(String, &'static str)>,
 }
 
+/// The operators: (keys, what they do).
 const OPERATORS: &[(&str, &str)] = &[
     ("d", "delete"),
     ("c", "change (delete, then insert)"),
@@ -58,132 +59,171 @@ const OBJECTS: &[(&str, &str)] = &[
     ("'", "a 'string'"),
 ];
 
+/// The registers, after `"`.
+const REGISTERS: &[(&str, &str)] = &[
+    ("a-z", "a named register (A-Z appends)"),
+    ("0", "the last yank"),
+    ("\"", "the unnamed register"),
+    ("_", "the black hole: forget it"),
+];
+
+/// What a register is for, after `"a`.
+const REGISTER_USES: &[(&str, &str)] = &[
+    ("yy y{motion}", "copy into it"),
+    ("dd d{motion}", "cut into it"),
+    ("p P", "paste from it"),
+];
+
+/// The commands after `g`: (keys, what, the key that must be learned).
+const G_COMMANDS: &[(&str, &str, char)] = &[
+    ("gg", "to the first line", 'g'),
+    ("ge", "back to a word's end", 'e'),
+    ("gu gU g~", "lower / upper / toggle case (then a motion)", 'U'),
+    ("gn", "select the next match (cgn changes it)", 'n'),
+    ("g&", "repeat the last :s on every line", '&'),
+    ("g_", "to the line's last non-blank", '_'),
+    ("g* g#", "search the word, inside longer words too", '*'),
+    ("gJ", "join lines without a space", 'J'),
+    ("gi", "insert where you last stopped", 'i'),
+    ("gv", "select the last selection again", 'v'),
+    ("gp gP", "put, and land after it", 'p'),
+];
+
+/// Commands that take a character next, and what to type.
+const PROMPTS: &[(char, &str)] = &[
+    ('r', "r — type the character to put here"),
+    ('m', "m — name the mark: a to z"),
+    ('\'', "' — jump to a mark's line: a to z, or ' for the last jump"),
+    (
+        '`',
+        "` — jump to a mark's exact spot: a to z, or ` for the last jump",
+    ),
+    ('q', "q — record a macro into a register: a to z (q again stops)"),
+    (
+        '@',
+        "@ — play the macro in a register: a to z, or @ for the last one",
+    ),
+];
+
+/// `pairs` as a hint's list of next keys.
+fn listed(pairs: &[(&str, &'static str)]) -> Vec<(String, &'static str)> {
+    pairs.iter().map(|(k, w)| ((*k).to_string(), *w)).collect()
+}
+
 /// The hint for `pending` keys (as `Editor::pending` shows them) in normal
 /// or visual mode, given the keys the player has learned. `objects` says
 /// whether text objects have been taught yet.
 pub fn hint(pending: &str, visual: bool, allowed: &str, objects: bool) -> Option<Hint> {
     // A register prefix and a count don't change what comes next.
-    let mut p = pending;
-    let mut register = None;
-    if let Some(rest) = p.strip_prefix('"') {
-        let mut chars = rest.chars();
-        match chars.next() {
-            None => {
-                return Some(Hint {
-                    title: "\" — pick a register".into(),
-                    next: vec![
-                        ("a-z".into(), "a named register (A-Z appends)"),
-                        ("0".into(), "the last yank"),
-                        ("\"".into(), "the unnamed register"),
-                        ("_".into(), "the black hole: forget it"),
-                    ],
-                });
-            }
-            Some(r) => {
-                register = Some(r);
-                p = chars.as_str();
-            }
+    let (register, p) = match pending.strip_prefix('"') {
+        Some("") => {
+            return Some(Hint {
+                title: "\" — pick a register".into(),
+                next: listed(REGISTERS),
+            });
         }
-    }
+        Some(rest) => {
+            let mut chars = rest.chars();
+            (chars.next(), chars.as_str())
+        }
+        None => (None, pending),
+    };
     let p = p.trim_start_matches(|c: char| c.is_ascii_digit());
     let learned = |c: char| allowed.contains(c);
-
     if p.is_empty() {
-        let title = match register {
-            Some(r) => format!("\"{r} — then y, d, c or p to use register {r}"),
-            None => "a count — then a motion or operator: it repeats".into(),
-        };
-        let next = match register {
-            Some(_) => vec![
-                ("yy y{motion}".into(), "copy into it"),
-                ("dd d{motion}".into(), "cut into it"),
-                ("p P".into(), "paste from it"),
-            ],
-            None => motions(&learned),
-        };
-        return Some(Hint { title, next });
+        return Some(counted(register, &learned));
     }
-    // An operator, maybe followed by a count: a motion or object comes next.
+    operator(p, &learned, objects)
+        .or_else(|| object(p, visual))
+        .or_else(|| argument(p, allowed))
+}
+
+/// After a register or a count alone.
+fn counted(register: Option<char>, learned: &impl Fn(char) -> bool) -> Hint {
+    match register {
+        Some(r) => Hint {
+            title: format!("\"{r} — then y, d, c or p to use register {r}"),
+            next: listed(REGISTER_USES),
+        },
+        None => Hint {
+            title: "a count — then a motion or operator: it repeats".into(),
+            next: motions(learned),
+        },
+    }
+}
+
+/// An operator, maybe followed by a count: a motion or object comes next.
+fn operator(p: &str, learned: &impl Fn(char) -> bool, objects: bool) -> Option<Hint> {
     let op_end = p.trim_end_matches(|c: char| c.is_ascii_digit());
-    if let Some((op, what)) = OPERATORS.iter().find(|(op, _)| *op == op_end) {
-        let mut next = motions(&learned);
-        let line = if op.len() == 2 {
-            format!("{op}{}", &op[1..])
-        } else {
-            format!("{op}{op}")
-        };
-        next.insert(0, (line, "the whole line"));
-        if objects {
-            next.push(("i{obj} a{obj}".into(), "a text object: iw, a(, i\", ap…"));
-        }
-        return Some(Hint {
-            title: format!("{op} — {what}: then where to"),
-            next,
-        });
+    let (op, what) = OPERATORS.iter().find(|(op, _)| *op == op_end)?;
+    let mut next = motions(learned);
+    let line = if op.len() == 2 {
+        format!("{op}{}", &op[1..])
+    } else {
+        format!("{op}{op}")
+    };
+    next.insert(0, (line, "the whole line"));
+    if objects {
+        next.push(("i{obj} a{obj}".into(), "a text object: iw, a(, i\", ap…"));
     }
-    // An operator and i or a (or i / a in visual mode): a text object.
-    let obj = p
+    Some(Hint {
+        title: format!("{op} — {what}: then where to"),
+        next,
+    })
+}
+
+/// An operator and i or a (or i / a in visual mode): a text object.
+fn object(p: &str, visual: bool) -> Option<Hint> {
+    let (op, side) = p
         .strip_suffix('i')
         .map(|o| (o, "inside"))
-        .or_else(|| p.strip_suffix('a').map(|o| (o, "around")));
-    if let Some((op, side)) = obj
-        && (OPERATORS.iter().any(|(o, _)| *o == op) || (visual && op.is_empty()))
-    {
-        let next = OBJECTS.iter().map(|(k, w)| (k.to_string(), *w)).collect();
+        .or_else(|| p.strip_suffix('a').map(|o| (o, "around")))?;
+    let after_operator = OPERATORS.iter().any(|(o, _)| *o == op);
+    if !(after_operator || visual && op.is_empty()) {
+        return None;
+    }
+    Some(Hint {
+        title: format!("{p} — {side}: which object?"),
+        next: listed(OBJECTS),
+    })
+}
+
+/// A command that takes an argument: `g` and what follows it, or a
+/// character.
+fn argument(p: &str, allowed: &str) -> Option<Hint> {
+    if p == "g" {
+        let next = G_COMMANDS
+            .iter()
+            .filter(|(k, _, need)| {
+                *k == "gg" || allowed.contains(*need) || allowed.contains(':') && *k == "g&"
+            })
+            .map(|(k, w, _)| ((*k).to_string(), *w))
+            .collect();
         return Some(Hint {
-            title: format!("{p} — {side}: which object?"),
+            title: "g — more commands".into(),
             next,
         });
     }
-    let simple = |title: &str| {
-        Some(Hint {
-            title: title.into(),
-            next: Vec::new(),
-        })
-    };
-    match p.chars().last()? {
-        _ if p.ends_with('g') && p.len() == 1 => Some(Hint {
-            title: "g — more commands".into(),
-            next: [
-                ("gg", "to the first line", 'g'),
-                ("ge", "back to a word's end", 'e'),
-                ("gu gU g~", "lower / upper / toggle case (then a motion)", 'U'),
-                ("gn", "select the next match (cgn changes it)", 'n'),
-                ("g&", "repeat the last :s on every line", '&'),
-                ("g_", "to the line's last non-blank", '_'),
-                ("g* g#", "search the word, inside longer words too", '*'),
-                ("gJ", "join lines without a space", 'J'),
-                ("gi", "insert where you last stopped", 'i'),
-                ("gv", "select the last selection again", 'v'),
-                ("gp gP", "put, and land after it", 'p'),
-            ]
-            .into_iter()
-            .filter(|(k, _, need)| *k == "gg" || learned(*need) || allowed.contains(':') && *k == "g&")
-            .map(|(k, w, _)| (k.to_string(), w))
-            .collect(),
-        }),
+    let c = p.chars().last()?;
+    let title = match c {
         'f' | 'F' | 't' | 'T' if p.len() <= 3 => {
-            let c = p.chars().last().unwrap();
             let way = match c {
                 'f' => "jump onto",
                 'F' => "jump back onto",
                 't' => "jump to just before",
                 _ => "jump back to just after",
             };
-            simple(&format!(
-                "{c} — type a character to {way}, on this line (; repeats, , reverses)"
-            ))
+            format!("{c} — type a character to {way}, on this line (; repeats, , reverses)")
         }
-        'r' => simple("r — type the character to put here"),
-        'm' => simple("m — name the mark: a to z"),
-        '\'' => simple("' — jump to a mark's line: a to z, or ' for the last jump"),
-        '`' => simple("` — jump to a mark's exact spot: a to z, or ` for the last jump"),
-        'q' => simple("q — record a macro into a register: a to z (q again stops)"),
-        '@' => simple("@ — play the macro in a register: a to z, or @ for the last one"),
-        _ => None,
-    }
+        _ => PROMPTS.iter().find(|(k, _)| *k == c)?.1.to_string(),
+    };
+    Some(Hint {
+        title,
+        next: Vec::new(),
+    })
 }
 
+/// The motions the player has learned.
 fn motions(learned: &impl Fn(char) -> bool) -> Vec<(String, &'static str)> {
     MOTIONS
         .iter()

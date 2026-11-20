@@ -2,12 +2,38 @@
 //! play again later, when what they teach may be fading. A drill's par is
 //! the example's own keys.
 
-use crate::examples::{self, CURSOR};
+use crate::examples;
 use crate::levels::Level;
-use crate::vim::{Editor, Mode, Outcome, parse_keys, pos};
+use crate::vim::{Editor, Mode, Outcome, Pos, parse_keys, pos};
 
+/// Keeps `s` for the rest of the run, as the level wants.
 fn leak(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
+}
+
+/// Keys that reach outside the drill: the shelf's files, the shell, the
+/// file info and the register list.
+const OUTSIDE: &[&str] = &[":r", ":e", ":w", "!", "<C-g>", ":reg"];
+
+/// The marks overlay of `text`: `@` at `start`, and a crystal at `gem`.
+fn overlay(text: &str, start: Pos, gem: Option<Pos>) -> String {
+    let mut marks = String::new();
+    for (r, line) in text.split('\n').enumerate() {
+        if r > 0 {
+            marks.push('\n');
+        }
+        for c in 0..line.chars().count().max(1) {
+            let p = pos(r, c);
+            marks.push(if p == start {
+                '@'
+            } else if gem == Some(p) {
+                '*'
+            } else {
+                '.'
+            });
+        }
+    }
+    marks
 }
 
 /// Example `which` of isle `title` as a drill, unless it can't stand on its
@@ -18,31 +44,10 @@ pub fn drill(title: &str, which: usize) -> Option<Level> {
         return None;
     }
     let (marked, keys) = all[which % all.len()];
-    if keys.contains(":r")
-        || keys.contains(":e")
-        || keys.contains(":w")
-        || keys.contains('!')
-        || keys.contains("<C-g>")
-        || keys.contains(":reg")
-    {
+    if OUTSIDE.iter().any(|k| keys.contains(k)) {
         return None;
     }
-    let mut start = pos(0, 0);
-    let mut text = String::new();
-    let (mut row, mut col) = (0, 0);
-    for c in marked.chars() {
-        if c == CURSOR {
-            start = pos(row, col);
-            continue;
-        }
-        text.push(c);
-        if c == '\n' {
-            row += 1;
-            col = 0;
-        } else {
-            col += 1;
-        }
-    }
+    let (text, start) = examples::unmark(marked);
     let mut e = Editor::new(&text).with_cursor(start);
     for k in parse_keys(keys) {
         if let Outcome::Bell(_) = e.feed(k) {
@@ -57,23 +62,7 @@ pub fn drill(title: &str, which: usize) -> Option<Level> {
         return None;
     }
     // The overlay: @ at the start, and for a motion a crystal where it ends.
-    let lines: Vec<&str> = text.split('\n').collect();
-    let mut marks = String::new();
-    for (r, line) in lines.iter().enumerate() {
-        if r > 0 {
-            marks.push('\n');
-        }
-        for c in 0..line.chars().count().max(1) {
-            let p = pos(r, c);
-            marks.push(if p == start {
-                '@'
-            } else if !changed && p == e.cursor {
-                '*'
-            } else {
-                '.'
-            });
-        }
-    }
+    let marks = overlay(&text, start, (!changed).then_some(e.cursor));
     Some(Level {
         chapter: "Review",
         title: leak(format!("Review · {title}")),
@@ -141,7 +130,7 @@ mod tests {
                 );
                 any = true;
             }
-            isles += any as usize;
+            isles += usize::from(any);
         }
         assert!(isles >= 30, "only {isles} isles have drills");
         assert_eq!(pick(&["Chomp", "Word Hopping"], 5, 0).len(), 2);

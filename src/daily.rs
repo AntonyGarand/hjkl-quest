@@ -5,6 +5,7 @@
 use crate::levels::Level;
 use crate::vim::{Editor, Mode, parse_keys};
 
+/// The lines a puzzle is made of.
 const LINES: &[&str] = &[
     "the quick fox jumps over the lazy dog",
     "pack my box with five dozen jugs",
@@ -24,6 +25,7 @@ const LINES: &[&str] = &[
     "the archive smells of dust and rain",
 ];
 
+/// The words the setter types.
 const WORDS: &[&str] = &[
     "tide", "owl", "salt", "lamp", "reef", "kelp", "fern", "moss", "gale", "dune", "cove", "pearl",
 ];
@@ -58,6 +60,7 @@ impl Rng {
     }
 }
 
+/// Keeps `s` for the rest of the run, as the level wants.
 fn leak(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
@@ -65,21 +68,21 @@ fn leak(s: String) -> &'static str {
 /// The keys that take the cursor from where it is to word `word` of line
 /// `row` (both from 0), in the setter's plain style.
 fn go_to(e: &Editor, row: usize, word: usize) -> String {
-    let mut keys = String::new();
-    if row != e.cursor.row || e.cursor.col != 0 {
-        keys.push_str(&format!("{}G", row + 1));
-    }
-    match word {
-        0 => {}
-        1 => keys.push('w'),
-        n => keys.push_str(&format!("{n}w")),
-    }
-    keys
+    let line = if row != e.cursor.row || e.cursor.col != 0 {
+        format!("{}G", row + 1)
+    } else {
+        String::new()
+    };
+    let word = match word {
+        0 => String::new(),
+        1 => "w".into(),
+        n => format!("{n}w"),
+    };
+    line + &word
 }
 
-/// Today's puzzle, for `day` days since 1970-01-01.
-pub fn daily(day: u64) -> Level {
-    let mut rng = Rng::new(day);
+/// A few different lines from `LINES`.
+fn pick_lines(rng: &mut Rng) -> Vec<&'static str> {
     let count = 3 + rng.below(3);
     let mut lines: Vec<&str> = Vec::new();
     while lines.len() < count {
@@ -88,54 +91,72 @@ pub fn daily(day: u64) -> Level {
             lines.push(l);
         }
     }
-    let start = lines.join("\n");
-    let mut e = Editor::new(&start);
+    lines
+}
+
+/// One random edit of `e`: the keys that go to its place and make it, or
+/// `None` if the dice picked one that doesn't fit. Whole lines go at most
+/// once (`line_gone`): the puzzle is about editing them.
+fn random_edit(rng: &mut Rng, e: &Editor, line_gone: &mut bool) -> Option<String> {
+    let row = rng.below(e.lines.len());
+    let words = e.lines[row].iter().collect::<String>().split_whitespace().count();
+    if words == 0 {
+        return None;
+    }
+    let word = rng.below(words);
+    let new = *rng.pick(WORDS);
+    let action = match rng.below(9) {
+        0 => "dw".to_string(),
+        1 => format!("cw{new}<Esc>"),
+        2 => "~".to_string(),
+        3 => format!("r{}", (b'a' + rng.below(26) as u8) as char),
+        4 => "x".to_string(),
+        5 if word > 0 => "D".to_string(),
+        6 if e.lines.len() > 3 && !*line_gone => {
+            *line_gone = true;
+            "dd".to_string()
+        }
+        7 => format!("A {new}<Esc>"),
+        8 if row > 0 && e.lines.len() > 2 => "ddp".to_string(),
+        _ => return None,
+    };
+    // A whole-line action doesn't need the word.
+    let whole_line = matches!(action.as_str(), "dd" | "ddp") || action.starts_with('A');
+    Some(go_to(e, row, if whole_line { 0 } else { word }) + &action)
+}
+
+/// The setter edits `e` with a few random edits that each change it, and
+/// returns the program it typed.
+fn set(rng: &mut Rng, e: &mut Editor) -> String {
     let mut program = String::new();
     let edits = 4 + rng.below(3);
     let mut done = 0;
     let mut tries = 0;
-    // Whole lines go at most once: the puzzle is about editing them.
     let mut line_gone = false;
     while done < edits && tries < 200 {
         tries += 1;
-        let row = rng.below(e.lines.len());
-        let words = e.lines[row].iter().collect::<String>().split_whitespace().count();
-        if words == 0 {
+        let Some(keys) = random_edit(rng, e, &mut line_gone) else {
             continue;
-        }
-        let word = rng.below(words);
-        let new = *rng.pick(WORDS);
-        let action = match rng.below(9) {
-            0 => "dw".to_string(),
-            1 => format!("cw{new}<Esc>"),
-            2 => "~".to_string(),
-            3 => format!("r{}", (b'a' + rng.below(26) as u8) as char),
-            4 => "x".to_string(),
-            5 if word > 0 => "D".to_string(),
-            6 if e.lines.len() > 3 && !line_gone => {
-                line_gone = true;
-                "dd".to_string()
-            }
-            7 => format!("A {new}<Esc>"),
-            8 if row > 0 && e.lines.len() > 2 => "ddp".to_string(),
-            _ => continue,
         };
-        // A whole-line action doesn't need the word.
-        let keys = if matches!(action.as_str(), "dd" | "ddp") || action.starts_with('A') {
-            go_to(&e, row, 0)
-        } else {
-            go_to(&e, row, word)
-        } + &action;
         let mut trial = e.clone();
         let before = trial.text();
         trial.feed_all(&parse_keys(&keys));
         if trial.mode != Mode::Normal || trial.text() == before || !trial.pending().is_empty() {
             continue;
         }
-        e = trial;
+        *e = trial;
         program.push_str(&keys);
         done += 1;
     }
+    program
+}
+
+/// Today's puzzle, for `day` days since 1970-01-01.
+pub fn daily(day: u64) -> Level {
+    let mut rng = Rng::new(day);
+    let start = pick_lines(&mut rng).join("\n");
+    let mut e = Editor::new(&start);
+    let program = set(&mut rng, &mut e);
     let goal = e.text();
     Level {
         chapter: "Daily Tide",
@@ -152,6 +173,10 @@ pub fn daily(day: u64) -> Level {
     }
 }
 
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 /// "Nov 18" for a day number.
 pub fn day_label(day: u64) -> String {
     // Howard Hinnant's civil_from_days.
@@ -163,9 +188,6 @@ pub fn day_label(day: u64) -> String {
     let mp = (5 * doy + 2) / 153;
     let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
     format!("{} {d}", MONTHS[(m - 1) as usize])
 }
 
