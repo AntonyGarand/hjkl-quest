@@ -26,5 +26,9 @@ fn long_files(dir: &Path, found: &mut Vec<String>) {
 fn source_files_stay_small() {
     let mut found = Vec::new();
     long_files(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut found);
-    assert!(found.is_empty(), "files over {MAX_LINES} lines:\n{}", found.join("\n"));
+    assert!(
+        found.is_empty(),
+        "files over {MAX_LINES} lines:\n{}",
+        found.join("\n")
+    );
 }
