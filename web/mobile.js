@@ -6,8 +6,10 @@
 // the keys come from what lands in a hidden textarea instead, and are sent
 // on as the key presses a desktop keyboard would make.
 (() => {
-  const touch = matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
-  if (!touch) return;
+  // Phones and tablets only: their main input is a finger (no hover). A
+  // laptop with a touch screen still has a mouse or touchpad and a real
+  // keyboard, so it gets nothing.
+  if (!matchMedia("(hover: none) and (pointer: coarse)").matches) return;
 
   // US layout: the shifted characters and the key each is on.
   const SHIFTED = {
@@ -193,7 +195,14 @@
     button.type = "button";
     button.textContent = "⌨";
     button.setAttribute("aria-label", "Open the keyboard");
-    tap(button, open);
+    // Opened on click, not on the press: iOS shows the on-screen keyboard
+    // only for a focus() made in a full tap (touchend / click).
+    button.addEventListener("mousedown", (e) => e.preventDefault());
+    button.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      open();
+    });
     document.body.append(button);
 
     window.visualViewport?.addEventListener("resize", place);

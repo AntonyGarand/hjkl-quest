@@ -121,27 +121,40 @@ For development, `HJKL_LEVEL=12 cargo run` opens an isle directly.
 
 | File | What it holds |
 |---|---|
-| `src/vim.rs` | A self-contained vim emulator: motions, operators, text objects, insert/replace/visual/block modes, search, registers, marks, macros, ex ranges with `:s :g :norm :m :t :sort`, undo/redo, `.` |
+| `src/vim/` | A self-contained vim emulator: motions, operators, text objects, insert/replace/visual/block modes, search, registers, marks, macros, ex ranges with `:s :g :norm :m :t :sort`, undo/redo, `.` |
 | `src/lessons.rs` | The commands each isle requires, and how a typed command is matched against them |
 | `src/coach.rs` | The habit coach: slow command patterns and the faster command for each |
 | `src/examples.rs` | The worked examples of each isle's intro, played through the engine |
-| `src/intro.rs` | The intro card shown before an isle |
+| `src/ui/intro/` | The intro card shown before an isle |
 | `src/diff.rs` | How the buffer differs from the goal: extra characters, characters in place, and where missing text goes |
-| `src/levels.rs` | The campaign: maps, crystals, goals, unlocked keys and each isle's golf solution |
-| `src/game.rs` | A level being played: key locking, crystals (fading ones too), bugs, sentries, frozen lines, banned keys, free play, completion, stars. Its tests replay every golf solution and check it clears the isle at exactly par. |
+| `src/levels/` | The campaign, one file per region: maps, crystals, goals, unlocked keys and each isle's golf solution |
+| `src/game/` | A level being played: key locking, crystals (fading ones too), bugs, sentries, frozen lines, banned keys, free play, completion, stars. Its tests replay every golf solution and check it clears the isle at exactly par. |
 | `src/audio.rs` | Sound effects and the ambient pad, synthesized into WAV at start-up |
-| `src/story.rs` | Pip's lines, the bosses, each chapter's sky, ground, weather and toolkit, and the map's regions |
-| `src/regex.rs` | Vim's patterns: a small backtracking matcher, and `:s` replacements with groups |
+| `src/story/` | Pip's lines, the bosses, each chapter's sky, ground, weather and toolkit, and the map's regions |
+| `src/regex/` | Vim's patterns: a small backtracking matcher, and `:s` replacements with groups |
 | `src/hints.rs` | What can follow a half-typed command |
 | `src/grammar.rs` | Operators and motions as verbs and nouns, and how a command splits into them |
 | `src/daily.rs` | The daily tide: a seeded puzzle generator |
 | `src/review.rs` | Review drills built from the isles' examples |
-| `src/worldmap.rs` | The world map and Pip's ferry |
-| `src/replay.rs` | A run played back beside the golf line |
-| `src/screens.rs` | The grammar grid, the boss banner and the hint card |
+| `src/ui/worldmap/` | The world map and Pip's ferry |
+| `src/ui/replay.rs` | A run played back beside the golf line |
+| `src/ui/grammar_screen.rs`, `boss.rs`, `hint.rs` | The grammar grid, the boss banner and the hint card |
 | `web/splash.*` | The web loading screen (night sky, a wisp hopping on h j k l, download progress, a vim tip), put into the page `nsh package` writes by `web/splash.py` in CI |
 | `web/mobile.js` | The on-screen keyboard for phones and tablets: a ⌨ button, a bar of Esc, Ctrl, Tab and `:`, and typed text sent on as key presses (also put in by `web/splash.py`) |
-| `src/lib.rs` | The Native Shell UI: the 3/4-isometric board on canvases, animated values for the wisp, camera and sky, and the menus |
+| `src/ui/` | The Native Shell UI: state and saving, key handling (`keys/`), the 3/4-isometric board on canvases (`draw/`), the play screen (`play/`), the completion card, animated values for the wisp, camera and sky, and the menus |
+| `src/lib.rs` | The crate root: the modules and the registered `App` |
 
-CI (`.github/workflows/ci.yml`) runs the tests, deploys the web build to GitHub Pages and packages the desktop apps
+## Code style
+
+`cargo fmt` formats (`rustfmt.toml`), and Clippy runs with the pedantic group on (`[lints]` in `Cargo.toml`).
+`clippy.toml` keeps functions short (60 lines) and simple (cognitive complexity 20, nesting 5), and a test
+(`src/code_size.rs`) keeps every source file under 400 lines: a file that grows past it should become a
+module folder.
+
+```sh
+cargo fmt
+cargo clippy --all-targets -- -D warnings
+```
+
+CI (`.github/workflows/ci.yml`) checks the formatting and lints, runs the tests, deploys the web build to GitHub Pages and packages the desktop apps
 for Windows, macOS and Linux as build artifacts.

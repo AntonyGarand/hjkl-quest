@@ -22,6 +22,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --lib
 
+  lint:
+    name: Format and lints
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: GTK 4 (the Linux backend's build dependency)
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev clang llvm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+
   web:
     name: Web build
     runs-on: ubuntu-24.04
@@ -53,7 +67,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: [test, web]
+    needs: [lint, test, web]
     runs-on: ubuntu-24.04
     permissions:
       pages: write
