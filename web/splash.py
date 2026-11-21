@@ -52,6 +52,8 @@ page = replace_once(page, "<script>const fetches", f"<script>\n{script}</script>
 # The on-screen keyboard for phones and tablets, last.
 page = replace_once(page, "</body>", "<script>\n" + read("mobile.js") + "</script>\n</body>", "end of the body")
 page = replace_once(page, "</style>\n</head>", read("splash.css") + "</style>\n</head>", "end of the styles")
+# Anonymous pageview to Plausible (stats.garand.dev), last in the head.
+page = replace_once(page, "</head>", "<script>\n" + read("analytics.js") + "</script>\n</head>", "end of the head")
 page = re.sub(
     r'(<div id="status" role="status" aria-live="polite">)<div class="spinner" aria-label="Loading"></div>(</div>)',
     lambda m: m.group(1) + "\n" + read("splash.html") + m.group(2),
