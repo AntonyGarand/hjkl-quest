@@ -1,4 +1,4 @@
-// Plausible pageviews -> stats.garand.dev (site "garand.dev", split by hostname).
+// Plausible pageviews -> stats.garand.dev (own site + "garand.dev" rollup).
 // Opt out: localStorage.plausible_ignore = "true".
 (function () {
   if (!/(^|\.)garand\.dev$/.test(location.hostname)) return;
@@ -13,7 +13,7 @@
       method: "POST",
       keepalive: true,
       headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ n: "pageview", u: last, d: "garand.dev", r: document.referrer || null }),
+      body: JSON.stringify({ n: "pageview", u: last, d: location.hostname + ",garand.dev", r: document.referrer || null }),
     }).catch(function () {});
   }
   pageview();
